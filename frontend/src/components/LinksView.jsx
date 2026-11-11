@@ -1,7 +1,8 @@
 import React, { useState, useEffect } from 'react';
-import { Link as LinkIcon, Download, CheckCircle, Clock, FileText, AlertCircle, RefreshCw, QrCode, Clipboard, Camera, X, Trash2, Copy, CheckCircle2, ArrowDownCircle, ExternalLink } from 'lucide-react';
-import { getLinkInfo, formatBytes, getServerUrl, getLinksList, deleteLink } from '../api';
+import { Link as LinkIcon, Download, CheckCircle, Clock, FileText, AlertCircle, RefreshCw, QrCode, Clipboard, Camera, X, Trash2, Copy, CheckCircle2, ArrowDownCircle, ExternalLink, Check } from 'lucide-react';
+import { getLinkInfo, formatBytes, getServerUrl, getLinksList, deleteLink, getDeviceId } from '../api';
 import { Html5QrcodeScanner } from 'html5-qrcode';
+import confetti from 'canvas-confetti';
 
 export default function LinksView() {
   const [urlInput, setUrlInput] = useState('');
@@ -10,37 +11,45 @@ export default function LinksView() {
   const [error, setError] = useState(null);
   const [downloading, setDownloading] = useState(false);
   const [progress, setProgress] = useState(0);
+  const [downloadSuccess, setDownloadSuccess] = useState(false);
   const [showScanner, setShowScanner] = useState(false);
   const [myLinks, setMyLinks] = useState([]);
   const [copiedToken, setCopiedToken] = useState(null);
   const [viewQrLink, setViewQrLink] = useState(null);
 
-  // Load active shared links & history
+  // Load ONLY links created by this current device (Sender only)
   const loadLinksHistory = async () => {
     try {
+      const myId = getDeviceId();
       const serverList = await getLinksList();
       const localList = JSON.parse(localStorage.getItem('titan_local_created_links') || '[]');
       
-      // Merge server list with local history
       const map = new Map();
-      (serverList || []).forEach(item => map.set(item.id, item));
-      localList.forEach(item => {
-        const id = item.token || item.id;
-        if (!map.has(id)) {
-          map.set(id, {
-            id,
-            fileName: item.fileName,
-            fileSize: item.fileSize,
-            type: item.type || 'file',
-            createdAt: item.createdAt,
-            expiresAt: item.expiresAt,
-            status: Date.now() > item.expiresAt ? 'expired' : (item.status || 'pending'),
-            downloadProgress: item.downloadProgress || 0,
-            url: item.url,
-            qrCode: item.qrCode
-          });
-        }
-      });
+      // Server links that belong to this device
+      (serverList || [])
+        .filter(item => item.creatorDeviceId === myId)
+        .forEach(item => map.set(item.id, item));
+
+      // Local links that belong to this device
+      localList
+        .filter(item => !item.creatorDeviceId || item.creatorDeviceId === myId)
+        .forEach(item => {
+          const id = item.token || item.id;
+          if (!map.has(id)) {
+            map.set(id, {
+              id,
+              fileName: item.fileName,
+              fileSize: item.fileSize,
+              type: item.type || 'file',
+              createdAt: item.createdAt,
+              expiresAt: item.expiresAt,
+              status: Date.now() > item.expiresAt ? 'expired' : (item.status || 'pending'),
+              downloadProgress: item.downloadProgress || 0,
+              url: item.url,
+              qrCode: item.qrCode
+            });
+          }
+        });
 
       setMyLinks(Array.from(map.values()).sort((a, b) => (b.createdAt || 0) - (a.createdAt || 0)));
     } catch (e) {
@@ -91,7 +100,7 @@ export default function LinksView() {
     window.addEventListener('titan-link-completed', handleCompleted);
     window.addEventListener('titan-links-updated', handleLinksUpdated);
 
-    const intv = setInterval(loadLinksHistory, 4000);
+    const intv = setInterval(loadLinksHistory, 5000);
 
     return () => {
       window.removeEventListener('titan-link-progress', handleProgress);
@@ -115,6 +124,7 @@ export default function LinksView() {
     const target = (linkToValidate || urlInput).trim();
     setError(null);
     setFileInfo(null);
+    setDownloadSuccess(false);
     if (!target) {
       setError('Please enter a valid link or token');
       return;
@@ -173,33 +183,114 @@ export default function LinksView() {
     };
   }, [showScanner]);
 
+  // Bulletproof Multi-platform Download
   const handleStartDownload = () => {
     if (!fileInfo) return;
+    setError(null);
     setDownloading(true);
-    setProgress(30);
+    setProgress(5);
+    setDownloadSuccess(false);
 
     const downloadUrl = fileInfo.directUrl || `${getServerUrl()}/api/links/download/${fileInfo.token}`;
-    
-    // Check if native Android DownloadManager is available
-    if (window.TitanNativeBridge && typeof window.TitanNativeBridge.downloadViaManager === 'function') {
-      window.TitanNativeBridge.downloadViaManager(downloadUrl, fileInfo.fileName, 'Titan Plus Share');
-      setProgress(100);
-      setTimeout(() => setDownloading(false), 800);
+
+    // Handle Text Note directly
+    if (fileInfo.type === 'text') {
+      fetch(downloadUrl)
+        .then(r => r.text())
+        .then(text => {
+          navigator.clipboard.writeText(text);
+          setProgress(100);
+          setDownloading(false);
+          setDownloadSuccess(true);
+          confetti({ particleCount: 50, spread: 50, origin: { y: 0.6 } });
+        })
+        .catch(err => {
+          setError('Failed to fetch text note: ' + err.message);
+          setDownloading(false);
+        });
       return;
     }
 
-    // Web / Desktop fallback
-    const intv = setInterval(() => {
-      setProgress((p) => {
-        if (p >= 100) {
-          clearInterval(intv);
-          setDownloading(false);
-          window.location.href = downloadUrl;
-          return 100;
+    // Native Android direct stream using MediaStore.Downloads
+    if (window.TitanNativeBridge && typeof window.TitanNativeBridge.downloadDirect === 'function') {
+      const handleNativeProgress = (e) => {
+        if (e.detail?.percent !== undefined) {
+          setProgress(e.detail.percent);
         }
-        return p + 25;
-      });
-    }, 150);
+      };
+
+      const handleNativeComplete = () => {
+        setProgress(100);
+        setDownloading(false);
+        setDownloadSuccess(true);
+        confetti({ particleCount: 70, spread: 60, origin: { y: 0.6 } });
+        window.removeEventListener('titan-native-download-progress', handleNativeProgress);
+        window.removeEventListener('titan-native-download-complete', handleNativeComplete);
+      };
+
+      const handleNativeError = (e) => {
+        setError(e.detail?.error || 'Download failed on device');
+        setDownloading(false);
+        window.removeEventListener('titan-native-download-progress', handleNativeProgress);
+        window.removeEventListener('titan-native-download-error', handleNativeError);
+      };
+
+      window.addEventListener('titan-native-download-progress', handleNativeProgress);
+      window.addEventListener('titan-native-download-complete', handleNativeComplete);
+      window.addEventListener('titan-native-download-error', handleNativeError);
+
+      window.TitanNativeBridge.downloadDirect(downloadUrl, fileInfo.fileName);
+      return;
+    }
+
+    // Standard HTTP XHR stream fallback with real-time byte tracking
+    const xhr = new XMLHttpRequest();
+    xhr.open('GET', downloadUrl, true);
+    xhr.responseType = 'blob';
+
+    xhr.onprogress = (e) => {
+      if (e.lengthComputable && e.total > 0) {
+        const pct = Math.round((e.loaded / e.total) * 100);
+        setProgress(pct);
+      }
+    };
+
+    xhr.onload = () => {
+      if (xhr.status >= 200 && xhr.status < 300) {
+        setProgress(100);
+        setDownloading(false);
+        setDownloadSuccess(true);
+        confetti({ particleCount: 70, spread: 60, origin: { y: 0.6 } });
+
+        const blob = xhr.response;
+
+        if (window.TitanNativeBridge && typeof window.TitanNativeBridge.saveBase64ToDownloads === 'function') {
+          const reader = new FileReader();
+          reader.onloadend = () => {
+            const base64data = reader.result.split(',')[1];
+            window.TitanNativeBridge.saveBase64ToDownloads(base64data, fileInfo.fileName);
+          };
+          reader.readAsDataURL(blob);
+        } else {
+          const a = document.createElement('a');
+          a.href = window.URL.createObjectURL(blob);
+          a.download = fileInfo.fileName;
+          document.body.appendChild(a);
+          a.click();
+          document.body.removeChild(a);
+        }
+      } else {
+        setError(`Download failed (HTTP ${xhr.status}). Host may have stopped sharing.`);
+        setDownloading(false);
+      }
+    };
+
+    xhr.onerror = () => {
+      setError('Cannot connect to Host Laptop. Ensure both devices are on the same Wi-Fi / Hotspot.');
+      setDownloading(false);
+    };
+
+    xhr.send();
   };
 
   const handleDeleteHistoryLink = async (tokenId) => {
@@ -339,23 +430,17 @@ export default function LinksView() {
         </div>
       )}
 
-      {/* Section: Active Shared Links & History */}
-      <div className="mt-8">
-        <div className="flex items-center justify-between mb-3 px-1">
-          <h3 className="text-sm font-bold text-slate-800 flex items-center gap-2">
-            <LinkIcon className="w-4 h-4 text-blue-600" />
-            <span>Shared Links History</span>
-          </h3>
-          <span className="text-xs text-slate-400 font-medium">{myLinks.length} total</span>
-        </div>
-
-        {myLinks.length === 0 ? (
-          <div className="p-8 text-center bg-white rounded-[22px] border border-slate-100 text-slate-400">
-            <LinkIcon className="w-8 h-8 mx-auto mb-2 opacity-30 text-blue-600" />
-            <p className="text-xs font-medium">No links generated yet</p>
-            <p className="text-[11px] mt-0.5">When you share via "Generate Link", tracking appears here</p>
+      {/* Section: Active Shared Links & History (Only visible on sender device that created links) */}
+      {myLinks.length > 0 && (
+        <div className="mt-8">
+          <div className="flex items-center justify-between mb-3 px-1">
+            <h3 className="text-sm font-bold text-slate-800 flex items-center gap-2">
+              <LinkIcon className="w-4 h-4 text-blue-600" />
+              <span>Shared Links History</span>
+            </h3>
+            <span className="text-xs text-slate-400 font-medium">{myLinks.length} total</span>
           </div>
-        ) : (
+
           <div className="space-y-3">
             {myLinks.map((link) => {
               const isExpired = link.isExpired || (link.expiresAt && Date.now() > link.expiresAt);
@@ -465,8 +550,8 @@ export default function LinksView() {
               );
             })}
           </div>
-        )}
-      </div>
+        </div>
+      )}
 
       {/* QR Code Popup Modal */}
       {viewQrLink && (

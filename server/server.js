@@ -259,7 +259,7 @@ async function registerWithVercel(linkEntry, token) {
 
 app.post('/api/links/create', upload.single('file'), async (req, res) => {
   try {
-    const { type, textContent, originalName } = req.body;
+    const { type, textContent, originalName, creatorDeviceId, creatorDeviceName } = req.body;
     const token = crypto.randomBytes(6).toString('hex');
     const now = Date.now();
     const expiresAt = now + LINK_EXPIRY_MS;
@@ -267,6 +267,8 @@ app.post('/api/links/create', upload.single('file'), async (req, res) => {
     let linkEntry = {
       id: token,
       type: type || 'file',
+      creatorDeviceId: creatorDeviceId || '',
+      creatorDeviceName: creatorDeviceName || 'Device',
       createdAt: now,
       expiresAt,
       downloadCount: 0
@@ -319,7 +321,7 @@ app.post('/api/links/create', upload.single('file'), async (req, res) => {
 
 app.post('/api/links/create-folder', upload.array('files'), async (req, res) => {
   try {
-    const folderName = req.body.folderName || 'Archive';
+    const { folderName = 'Archive', creatorDeviceId, creatorDeviceName } = req.body;
     const token = crypto.randomBytes(6).toString('hex');
     const zipPath = path.join(UPLOAD_DIR, `${Date.now()}-${folderName}.zip`);
     const output = fs.createWriteStream(zipPath);
@@ -346,6 +348,8 @@ app.post('/api/links/create-folder', upload.array('files'), async (req, res) => 
       const linkEntry = {
         id: token,
         type: 'folder',
+        creatorDeviceId: creatorDeviceId || '',
+        creatorDeviceName: creatorDeviceName || 'Device',
         fileName: `${folderName}.zip`,
         filePath: zipPath,
         fileSize: stats.size,
@@ -387,11 +391,19 @@ app.post('/api/links/create-folder', upload.array('files'), async (req, res) => 
   }
 });
 
-function findLink(token) {
+function findLink(rawToken) {
+  if (!rawToken) return null;
+  let token = rawToken.toString().trim();
+  if (token.includes('/d/')) token = token.split('/d/')[1].split('/')[0].split('?')[0];
+  if (token.includes('/download/')) token = token.split('/download/')[1].split('/')[0].split('?')[0];
+  if (token.includes('/')) token = token.split('/').pop().split('?')[0];
+
   let link = sharedLinks.find((l) => l.id === token);
   if (!link) {
     try {
-      const raw = Buffer.from(token, 'base64url').toString('utf8');
+      let b64 = token.replace(/-/g, '+').replace(/_/g, '/');
+      while (b64.length % 4) b64 += '=';
+      const raw = Buffer.from(b64, 'base64').toString('utf8');
       const p = JSON.parse(raw);
       if (p && p.i) {
         link = sharedLinks.find((l) => l.id === p.i);
@@ -414,6 +426,7 @@ app.get('/api/links/info/:token', (req, res) => {
     type: link.type,
     fileName: link.fileName,
     fileSize: link.fileSize,
+    creatorDeviceId: link.creatorDeviceId || '',
     isExpired,
     remainingSeconds,
     expiresAt: link.expiresAt
@@ -421,13 +434,22 @@ app.get('/api/links/info/:token', (req, res) => {
 });
 
 app.get('/api/links/list', (req, res) => {
+  const { creatorDeviceId } = req.query;
   const now = Date.now();
   const primaryIp = getLocalIpAddresses()[0];
-  const list = sharedLinks.map((l) => ({
+
+  // ONLY return links created by the requesting device
+  let filtered = [];
+  if (creatorDeviceId) {
+    filtered = sharedLinks.filter((l) => l.creatorDeviceId === creatorDeviceId);
+  }
+
+  const list = filtered.map((l) => ({
     id: l.id,
     fileName: l.fileName,
     fileSize: l.fileSize,
     type: l.type,
+    creatorDeviceId: l.creatorDeviceId || '',
     createdAt: l.createdAt,
     expiresAt: l.expiresAt,
     downloadCount: l.downloadCount || 0,
@@ -479,8 +501,10 @@ app.get('/api/links/download/:token', (req, res) => {
     });
     broadcastWs('links-updated', sharedLinks);
 
+    res.setHeader('Access-Control-Allow-Origin', '*');
     res.setHeader('Content-Type', 'text/plain; charset=utf-8');
-    res.setHeader('Content-Disposition', `attachment; filename="${encodeURIComponent(link.fileName)}"`);
+    const safeTextName = (link.fileName || 'Shared_Note.txt').replace(/[^\w\.\-\s]/g, '_');
+    res.setHeader('Content-Disposition', `attachment; filename="${safeTextName}"; filename*=UTF-8''${encodeURIComponent(link.fileName || 'Shared_Note.txt')}`);
     return res.send(link.textContent);
   }
 
@@ -502,7 +526,9 @@ app.get('/api/links/download/:token', (req, res) => {
     percent: 0
   });
 
-  res.setHeader('Content-Disposition', `attachment; filename="${encodeURIComponent(link.fileName)}"`);
+  const safeFileName = link.fileName.replace(/[^\w\.\-\s]/g, '_');
+  res.setHeader('Access-Control-Allow-Origin', '*');
+  res.setHeader('Content-Disposition', `attachment; filename="${safeFileName}"; filename*=UTF-8''${encodeURIComponent(link.fileName)}`);
   res.setHeader('Content-Type', link.mimeType || 'application/octet-stream');
   res.setHeader('Content-Length', totalBytes);
 

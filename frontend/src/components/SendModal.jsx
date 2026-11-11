@@ -42,15 +42,28 @@ export default function SendModal({ item, onClose, onStartTransfer }) {
   const processPairing = async (decodedText) => {
     try {
       const text = typeof decodedText === 'string' ? decodedText.trim() : JSON.stringify(decodedText);
-      let payload = null;
-      try {
-        payload = JSON.parse(text);
-      } catch (e) {
-        setScanMessage('Invalid QR format. Please scan the Pairing QR code from Laptop.');
+
+      // Check if URL or link QR
+      if (text.startsWith('http://') || text.startsWith('https://') || text.includes('/d/')) {
+        try {
+          const parsed = new URL(text);
+          if (parsed.hostname && parsed.hostname !== 'localhost' && !parsed.hostname.includes('vercel.app')) {
+            setServerUrl(parsed.origin);
+          }
+        } catch (e) {}
+        setScanMessage('Detected Titan link! Server URL updated.');
+        setScanning(false);
+        await loadDevices();
+        setTimeout(() => setView('devices'), 800);
         return;
       }
 
-      if (payload && (payload.appName === 'Titan Plus Share' || payload.token)) {
+      let payload = null;
+      try {
+        payload = JSON.parse(text);
+      } catch (e) {}
+
+      if (payload && (payload.appName === 'Titan Plus Share' || payload.token || payload.ip)) {
         const laptopIp = payload.ip || (payload.ips && payload.ips[0]) || '127.0.0.1';
         const laptopPort = payload.port || 51733;
         setServerUrl(`http://${laptopIp}:${laptopPort}`);

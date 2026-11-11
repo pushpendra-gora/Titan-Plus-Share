@@ -505,7 +505,7 @@ export default function App() {
               )}
 
               {activeTab === 'links' && <LinksView />}
-              {activeTab === 'settings' && <SettingsView isMobileMode={false} />}
+              {activeTab === 'settings' && <SettingsView isMobileMode={false} onNavigate={setActiveTab} />}
             </main>
           </div>
 
@@ -588,7 +588,7 @@ export default function App() {
             )}
 
             {activeTab === 'links' && <LinksView />}
-            {activeTab === 'settings' && <SettingsView isMobileMode={true} />}
+            {activeTab === 'settings' && <SettingsView isMobileMode={true} onNavigate={setActiveTab} />}
           </div>
 
           {/* Mobile Bottom Navigation Bar */}

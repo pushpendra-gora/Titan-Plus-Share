@@ -70,8 +70,49 @@ export default function IncomingTransferModal({ incoming, onClose }) {
 
   const startPull = (downloadUrl, fileName) => {
     setDownloading(true);
-    setProgress(0);
+    setProgress(5);
     setTransferredBytes(0);
+
+    // Prefer high-performance Android direct native download
+    if (window.TitanNativeBridge && typeof window.TitanNativeBridge.downloadDirect === 'function') {
+      const handleNativeProg = (e) => {
+        if (e.detail?.percent !== undefined) {
+          setProgress(e.detail.percent);
+          if (e.detail.loaded) setTransferredBytes(e.detail.loaded);
+        }
+      };
+
+      const handleNativeDone = () => {
+        setProgress(100);
+        setCompleted(true);
+        setDownloading(false);
+        confetti({ particleCount: 60, spread: 60, origin: { y: 0.6 } });
+        window.removeEventListener('titan-native-download-progress', handleNativeProg);
+        window.removeEventListener('titan-native-download-complete', handleNativeDone);
+
+        // Send ACK back to server
+        if (incoming.transferId) {
+          fetch(`${getServerHost()}/api/transfer/ack`, {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ transferId: incoming.transferId, success: true })
+          }).catch(() => {});
+        }
+      };
+
+      const handleNativeErr = () => {
+        setDownloading(false);
+        window.removeEventListener('titan-native-download-progress', handleNativeProg);
+        window.removeEventListener('titan-native-download-error', handleNativeErr);
+      };
+
+      window.addEventListener('titan-native-download-progress', handleNativeProg);
+      window.addEventListener('titan-native-download-complete', handleNativeDone);
+      window.addEventListener('titan-native-download-error', handleNativeErr);
+
+      window.TitanNativeBridge.downloadDirect(downloadUrl, fileName);
+      return;
+    }
 
     const xhr = new XMLHttpRequest();
     xhr.open('GET', downloadUrl, true);

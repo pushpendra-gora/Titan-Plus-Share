@@ -26,6 +26,12 @@ import androidx.core.app.NotificationCompat;
 import androidx.core.content.ContextCompat;
 import com.getcapacitor.BridgeActivity;
 
+import android.content.ContentValues;
+import android.provider.MediaStore;
+import android.webkit.MimeTypeMap;
+import java.io.OutputStream;
+import java.net.HttpURLConnection;
+import java.net.URL;
 import org.json.JSONObject;
 import java.io.File;
 import java.io.FileInputStream;
@@ -52,6 +58,13 @@ public class MainActivity extends BridgeActivity {
         if (getBridge() != null && getBridge().getWebView() != null) {
             WebView webView = getBridge().getWebView();
             webView.getSettings().setMediaPlaybackRequiresUserGesture(false);
+            webView.getSettings().setDomStorageEnabled(true);
+            webView.getSettings().setAllowFileAccess(true);
+            webView.getSettings().setAllowContentAccess(true);
+            webView.getSettings().setJavaScriptCanOpenWindowsAutomatically(true);
+            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.LOLLIPOP) {
+                webView.getSettings().setMixedContentMode(android.webkit.WebSettings.MIXED_CONTENT_ALWAYS_ALLOW);
+            }
 
             webView.setWebChromeClient(new WebChromeClient() {
                 @Override
@@ -136,6 +149,27 @@ public class MainActivity extends BridgeActivity {
         public boolean saveBase64ToDownloads(String base64Data, String fileName) {
             try {
                 byte[] bytes = Base64.decode(base64Data, Base64.DEFAULT);
+                String extension = MimeTypeMap.getFileExtensionFromUrl(fileName);
+                String mimeType = extension != null ? MimeTypeMap.getSingleton().getMimeTypeFromExtension(extension.toLowerCase()) : "application/octet-stream";
+                if (mimeType == null) mimeType = "application/octet-stream";
+
+                if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q) {
+                    ContentValues values = new ContentValues();
+                    values.put(MediaStore.Downloads.DISPLAY_NAME, fileName);
+                    values.put(MediaStore.Downloads.MIME_TYPE, mimeType);
+                    values.put(MediaStore.Downloads.RELATIVE_PATH, Environment.DIRECTORY_DOWNLOADS + "/TitanPlusShare");
+
+                    Uri uri = getContentResolver().insert(MediaStore.Downloads.EXTERNAL_CONTENT_URI, values);
+                    if (uri != null) {
+                        try (OutputStream out = getContentResolver().openOutputStream(uri)) {
+                            out.write(bytes);
+                            out.flush();
+                        }
+                        showNotification("File Saved!", fileName + " saved to Downloads/TitanPlusShare");
+                        return true;
+                    }
+                }
+
                 File downloadDir = Environment.getExternalStoragePublicDirectory(Environment.DIRECTORY_DOWNLOADS);
                 File targetDir = new File(downloadDir, "TitanPlusShare");
                 if (!targetDir.exists()) targetDir.mkdirs();
@@ -153,6 +187,111 @@ public class MainActivity extends BridgeActivity {
                 e.printStackTrace();
                 return false;
             }
+        }
+
+        @JavascriptInterface
+        public void downloadDirect(final String fileUrl, final String fileName) {
+            new Thread(() -> {
+                HttpURLConnection conn = null;
+                InputStream in = null;
+                OutputStream out = null;
+                try {
+                    URL url = new URL(fileUrl);
+                    conn = (HttpURLConnection) url.openConnection();
+                    conn.setConnectTimeout(10000);
+                    conn.setReadTimeout(60000);
+                    conn.connect();
+
+                    int responseCode = conn.getResponseCode();
+                    if (responseCode >= 200 && responseCode < 300) {
+                        int fileLength = conn.getContentLength();
+                        in = conn.getInputStream();
+
+                        String extension = MimeTypeMap.getFileExtensionFromUrl(fileName);
+                        String mimeType = extension != null ? MimeTypeMap.getSingleton().getMimeTypeFromExtension(extension.toLowerCase()) : "application/octet-stream";
+                        if (mimeType == null) mimeType = "application/octet-stream";
+
+                        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q) {
+                            ContentValues values = new ContentValues();
+                            values.put(MediaStore.Downloads.DISPLAY_NAME, fileName);
+                            values.put(MediaStore.Downloads.MIME_TYPE, mimeType);
+                            values.put(MediaStore.Downloads.RELATIVE_PATH, Environment.DIRECTORY_DOWNLOADS + "/TitanPlusShare");
+                            Uri uri = getContentResolver().insert(MediaStore.Downloads.EXTERNAL_CONTENT_URI, values);
+                            if (uri != null) {
+                                out = getContentResolver().openOutputStream(uri);
+                            }
+                        }
+
+                        if (out == null) {
+                            File downloadDir = Environment.getExternalStoragePublicDirectory(Environment.DIRECTORY_DOWNLOADS);
+                            File targetDir = new File(downloadDir, "TitanPlusShare");
+                            if (!targetDir.exists()) targetDir.mkdirs();
+                            File targetFile = new File(targetDir, fileName);
+                            out = new FileOutputStream(targetFile);
+                        }
+
+                        byte[] buffer = new byte[65536];
+                        long total = 0;
+                        int count;
+                        long lastReport = 0;
+
+                        while ((count = in.read(buffer)) != -1) {
+                            total += count;
+                            out.write(buffer, 0, count);
+
+                            long now = System.currentTimeMillis();
+                            if (fileLength > 0 && (now - lastReport > 200)) {
+                                lastReport = now;
+                                final int pct = (int) ((total * 100) / fileLength);
+                                final long currentLoaded = total;
+                                final long currentTotal = fileLength;
+                                runOnUiThread(() -> {
+                                    if (getBridge() != null && getBridge().getWebView() != null) {
+                                        getBridge().getWebView().evaluateJavascript(
+                                            "window.dispatchEvent(new CustomEvent('titan-native-download-progress', { detail: { percent: " + pct + ", loaded: " + currentLoaded + ", total: " + currentTotal + " } }));",
+                                            null
+                                        );
+                                    }
+                                });
+                            }
+                        }
+
+                        out.flush();
+                        showNotification("Download Complete!", fileName + " saved to Downloads/TitanPlusShare");
+                        runOnUiThread(() -> {
+                            if (getBridge() != null && getBridge().getWebView() != null) {
+                                getBridge().getWebView().evaluateJavascript(
+                                    "window.dispatchEvent(new CustomEvent('titan-native-download-complete', { detail: { fileName: '" + fileName.replace("'", "\\'") + "' } }));",
+                                    null
+                                );
+                            }
+                        });
+                    } else {
+                        runOnUiThread(() -> {
+                            if (getBridge() != null && getBridge().getWebView() != null) {
+                                getBridge().getWebView().evaluateJavascript(
+                                    "window.dispatchEvent(new CustomEvent('titan-native-download-error', { detail: { error: 'Server returned HTTP " + responseCode + "' } }));",
+                                    null
+                                );
+                            }
+                        });
+                    }
+                } catch (Exception e) {
+                    final String err = e.getMessage() != null ? e.getMessage() : "Download error";
+                    runOnUiThread(() -> {
+                        if (getBridge() != null && getBridge().getWebView() != null) {
+                            getBridge().getWebView().evaluateJavascript(
+                                "window.dispatchEvent(new CustomEvent('titan-native-download-error', { detail: { error: '" + err.replace("'", "\\'") + "' } }));",
+                                null
+                            );
+                        }
+                    });
+                } finally {
+                    try { if (in != null) in.close(); } catch (Exception ignored) {}
+                    try { if (out != null) out.close(); } catch (Exception ignored) {}
+                    if (conn != null) conn.disconnect();
+                }
+            }).start();
         }
 
         @JavascriptInterface

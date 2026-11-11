@@ -1,15 +1,18 @@
 import React, { useState, useEffect, useRef } from 'react';
-import { QrCode, Smartphone, Laptop, Trash2, Camera, Check, Server, HardDrive, Info, RefreshCw, Folder, Image } from 'lucide-react';
-import { getDeviceId, getDeviceName, setDeviceName, getPairingInfo, getPairedDevices, removePairedDevice, authenticateDevice, getServerUrl, setServerUrl } from '../api';
+import { QrCode, Smartphone, Laptop, Trash2, Camera, Check, Server, HardDrive, Info, RefreshCw, Folder, Image, Wifi, Radio } from 'lucide-react';
+import { getDeviceId, getDeviceName, setDeviceName, getPairingInfo, getPairedDevices, removePairedDevice, authenticateDevice, getServerUrl, setServerUrl, autoDiscoverLaptopServer } from '../api';
 import { Html5QrcodeScanner, Html5Qrcode } from 'html5-qrcode';
 
-export default function SettingsView({ isMobileMode }) {
+export default function SettingsView({ isMobileMode, onNavigate }) {
   const [deviceName, setDevName] = useState(getDeviceName());
   const [savedName, setSavedName] = useState(false);
   const [pairingData, setPairingData] = useState(null);
   const [pairedDevices, setPairedDevices] = useState([]);
   const [scanning, setScanning] = useState(false);
   const [scanResult, setScanResult] = useState(null);
+  const [hostUrl, setHostUrl] = useState(getServerUrl());
+  const [hostConnected, setHostConnected] = useState(false);
+  const [discovering, setDiscovering] = useState(false);
 
   // Save Path State
   const defaultPath = isMobileMode 
@@ -19,6 +22,19 @@ export default function SettingsView({ isMobileMode }) {
   const [savedPath, setSavedPath] = useState(false);
 
   const fileInputRef = useRef(null);
+
+  const testHostConnection = async (url) => {
+    try {
+      const target = (url || getServerUrl()).replace(/\/$/, '');
+      const res = await fetch(`${target}/api/status`, { signal: AbortSignal.timeout(2500) });
+      if (res.ok) {
+        setHostConnected(true);
+        return true;
+      }
+    } catch (e) {}
+    setHostConnected(false);
+    return false;
+  };
 
   const reloadData = async () => {
     try {
@@ -30,11 +46,55 @@ export default function SettingsView({ isMobileMode }) {
       const devices = await getPairedDevices();
       setPairedDevices(devices || []);
     } catch (e) {}
+
+    testHostConnection(getServerUrl());
   };
 
   useEffect(() => {
     reloadData();
+    const timer = setInterval(() => testHostConnection(getServerUrl()), 5000);
+    return () => clearInterval(timer);
   }, []);
+
+  const handleSaveHostUrl = async () => {
+    if (!hostUrl) return;
+    let clean = hostUrl.trim().replace(/\/$/, '');
+    if (!clean.startsWith('http://') && !clean.startsWith('https://')) {
+      clean = `http://${clean}`;
+    }
+    if (!clean.includes(':', 7)) {
+      clean = `${clean}:51733`;
+    }
+    setHostUrl(clean);
+    setServerUrl(clean);
+    const ok = await testHostConnection(clean);
+    if (ok) {
+      setScanResult('Connected to Laptop Server at ' + clean);
+    } else {
+      setScanResult('Saved server address. Ensure Laptop is running Titan Plus Share.');
+    }
+    reloadData();
+  };
+
+  const handleAutoDiscover = async () => {
+    setDiscovering(true);
+    setScanResult('Scanning local Wi-Fi & Hotspot for Laptop...');
+    try {
+      const found = await autoDiscoverLaptopServer();
+      if (found) {
+        setHostUrl(found);
+        setHostConnected(true);
+        setScanResult(`Laptop found & connected at ${found}!`);
+        await reloadData();
+      } else {
+        setScanResult('Laptop not found automatically. Check that both devices are on same Hotspot / Wi-Fi.');
+      }
+    } catch (e) {
+      setScanResult('Discovery error: ' + e.message);
+    } finally {
+      setDiscovering(false);
+    }
+  };
 
   const handleSaveDeviceName = () => {
     setDeviceName(deviceName);
@@ -64,37 +124,44 @@ export default function SettingsView({ isMobileMode }) {
     try {
       const text = typeof decodedText === 'string' ? decodedText.trim() : JSON.stringify(decodedText);
 
-      // Check if user scanned a download link QR code instead of a pairing QR
+      // 1. Check if user scanned a download link QR code
       if (text.startsWith('http://') || text.startsWith('https://') || text.includes('/d/')) {
+        try {
+          const parsed = new URL(text);
+          if (parsed.hostname && parsed.hostname !== 'localhost' && !parsed.hostname.includes('vercel.app')) {
+            setServerUrl(parsed.origin);
+            setHostUrl(parsed.origin);
+          }
+        } catch (e) {}
+
         localStorage.setItem('titan_pending_download_link', text);
         setScanResult('Detected Titan Plus Share Download link! Switching to Remote Downloads...');
         setScanning(false);
         setTimeout(() => {
           if (typeof onNavigate === 'function') onNavigate('links');
-        }, 1000);
+        }, 800);
         return;
       }
 
+      // 2. Check if JSON pairing payload
       let payload = null;
       try {
         payload = JSON.parse(text);
-      } catch (e) {
-        setScanResult('Invalid QR code format. Please scan the Pairing QR code from Laptop.');
-        return;
-      }
+      } catch (e) {}
 
-      if (payload && (payload.appName === 'Titan Plus Share' || payload.token)) {
+      if (payload && (payload.appName === 'Titan Plus Share' || payload.token || payload.ip)) {
         const laptopIp = payload.ip || (payload.ips && payload.ips[0]) || '127.0.0.1';
         const laptopPort = payload.port || 51733;
         const laptopUrl = `http://${laptopIp}:${laptopPort}`;
         
         setServerUrl(laptopUrl);
+        setHostUrl(laptopUrl);
 
-        // Save paired device locally immediately so it survives restarts
+        // Save paired device locally immediately
         const localList = JSON.parse(localStorage.getItem('titan_local_paired') || '[]');
         const newDevice = {
           deviceId: payload.token || ('lap_' + (payload.name || 'host')),
-          deviceName: payload.name || 'Laptop Server',
+          deviceName: payload.name || 'Host Laptop',
           deviceType: payload.type || 'laptop',
           ip: laptopIp,
           ips: payload.ips || [laptopIp],
@@ -112,16 +179,28 @@ export default function SettingsView({ isMobileMode }) {
             deviceType: 'mobile',
             pairingToken: payload.token
           });
-        } catch (e) {
-          console.warn('Laptop notify handshake deferred:', e);
-        }
+        } catch (e) {}
 
-        setScanResult(`Paired successfully with ${payload.name || 'Laptop'}!`);
+        setScanResult(`Paired successfully with ${payload.name || 'Laptop'} (${laptopIp})!`);
         setScanning(false);
         await reloadData();
-      } else {
-        setScanResult('Not a Titan Plus Share pairing QR code. Please scan the QR from Laptop Settings.');
+        return;
       }
+
+      // 3. Fallback: check if plain IP was scanned
+      const ipMatch = text.match(/\b(?:\d{1,3}\.){3}\d{1,3}(?::\d+)?\b/);
+      if (ipMatch) {
+        const rawHost = ipMatch[0];
+        const fullHost = rawHost.includes(':') ? `http://${rawHost}` : `http://${rawHost}:51733`;
+        setServerUrl(fullHost);
+        setHostUrl(fullHost);
+        setScanResult(`Target Laptop server set to ${fullHost}`);
+        setScanning(false);
+        await reloadData();
+        return;
+      }
+
+      setScanResult('Not recognized as Titan pairing code. Scan QR from Laptop Settings.');
     } catch (err) {
       console.error('Pairing QR parse error:', err);
       setScanResult('Could not parse QR code. Please try again.');
@@ -209,6 +288,55 @@ export default function SettingsView({ isMobileMode }) {
             className="px-4 py-2.5 bg-blue-600 hover:bg-blue-700 text-white rounded-xl text-xs font-semibold transition"
           >
             {savedName ? <Check className="w-4 h-4" /> : 'Save'}
+          </button>
+        </div>
+      </div>
+
+      {/* Host Laptop Server Connection Card */}
+      <div className="bg-white rounded-[22px] p-5 shadow-card border border-slate-100">
+        <div className="flex items-center justify-between mb-3">
+          <div className="flex items-center gap-2.5">
+            <div className="w-8 h-8 rounded-lg bg-blue-50 text-blue-600 flex items-center justify-center border border-blue-100">
+              <Server className="w-4 h-4" />
+            </div>
+            <div>
+              <h3 className="text-sm font-semibold text-slate-800">Host Laptop Server</h3>
+              <p className="text-[11px] text-slate-400">Direct LAN / Hotspot IP of host laptop</p>
+            </div>
+          </div>
+          <span className={`inline-flex items-center gap-1.5 px-2.5 py-1 rounded-full text-[11px] font-bold ${
+            hostConnected ? 'bg-emerald-50 text-emerald-600 border border-emerald-200' : 'bg-amber-50 text-amber-600 border border-amber-200'
+          }`}>
+            <span className={`w-2 h-2 rounded-full ${hostConnected ? 'bg-emerald-500' : 'bg-amber-500 animate-pulse'}`} />
+            {hostConnected ? 'Connected' : 'Offline'}
+          </span>
+        </div>
+
+        <div className="flex items-center gap-2 mb-3">
+          <input
+            type="text"
+            value={hostUrl}
+            onChange={(e) => setHostUrl(e.target.value)}
+            placeholder="http://10.89.213.60:51733"
+            className="flex-1 px-3.5 py-2.5 bg-slate-50 border border-slate-200 rounded-xl text-xs font-mono text-slate-800 outline-none focus:ring-2 focus:ring-blue-500/30 focus:border-blue-500"
+          />
+          <button
+            onClick={handleSaveHostUrl}
+            className="px-4 py-2.5 bg-blue-600 hover:bg-blue-700 text-white rounded-xl text-xs font-semibold transition shrink-0"
+          >
+            Connect
+          </button>
+        </div>
+
+        <div className="flex items-center justify-between pt-2 border-t border-slate-50 text-[11px]">
+          <span className="text-slate-400">Default Port: 51733</span>
+          <button
+            onClick={handleAutoDiscover}
+            disabled={discovering}
+            className="text-blue-600 hover:text-blue-700 font-semibold flex items-center gap-1 transition"
+          >
+            <RefreshCw className={`w-3 h-3 ${discovering ? 'animate-spin' : ''}`} />
+            <span>{discovering ? 'Detecting...' : 'Auto-Detect Laptop'}</span>
           </button>
         </div>
       </div>

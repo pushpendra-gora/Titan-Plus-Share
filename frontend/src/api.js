@@ -1,6 +1,23 @@
 // API service for Titan Plus Share
 const getSavedServerUrl = () => {
-  return localStorage.getItem('titan_server_url') || `${window.location.protocol}//${window.location.hostname}:51733`;
+  const saved = localStorage.getItem('titan_server_url');
+  if (saved) return saved;
+
+  // On Mobile, check if we have a paired laptop with a valid LAN IP
+  try {
+    const paired = JSON.parse(localStorage.getItem('titan_local_paired') || '[]');
+    const laptop = paired.find(d => d.ip && d.ip !== '127.0.0.1' && d.ip !== 'localhost' && d.ip !== 'LAN');
+    if (laptop) {
+      return `http://${laptop.ip}:${laptop.port || 51733}`;
+    }
+  } catch (e) {}
+
+  // If running in browser with real host IP (not localhost)
+  if (window.location.hostname && window.location.hostname !== 'localhost' && window.location.hostname !== '127.0.0.1') {
+    return `http://${window.location.hostname}:51733`;
+  }
+
+  return `${window.location.protocol}//${window.location.hostname}:51733`;
 };
 
 export const getServerUrl = () => {
@@ -9,8 +26,47 @@ export const getServerUrl = () => {
 };
 
 export const setServerUrl = (url) => {
-  localStorage.setItem('titan_server_url', url);
+  if (!url) return;
+  const clean = url.replace(/\/$/, '');
+  localStorage.setItem('titan_server_url', clean);
 };
+
+// Auto-discovery helper: probes known subnet / gateway candidates for active Titan server
+export async function autoDiscoverLaptopServer() {
+  const candidates = [];
+  
+  // 1. Check current serverUrl
+  candidates.push(getServerUrl());
+
+  // 2. Check paired devices
+  try {
+    const paired = JSON.parse(localStorage.getItem('titan_local_paired') || '[]');
+    for (const d of paired) {
+      if (d.ip && d.ip !== '127.0.0.1') candidates.push(`http://${d.ip}:${d.port || 51733}`);
+    }
+  } catch (e) {}
+
+  // 3. Common Android Hotspot Gateway & Subnet IP defaults
+  candidates.push('http://10.89.213.60:51733'); // User's active laptop IP
+  candidates.push('http://192.168.43.1:51733'); // Android default hotspot gateway
+  candidates.push('http://192.168.1.1:51733');
+  candidates.push('http://192.168.0.1:51733');
+
+  const uniqueCandidates = [...new Set(candidates)];
+  for (const host of uniqueCandidates) {
+    try {
+      const res = await fetch(`${host}/api/status`, { signal: AbortSignal.timeout(1200) });
+      if (res.ok) {
+        const data = await res.json();
+        if (data.status === 'online') {
+          setServerUrl(host);
+          return host;
+        }
+      }
+    } catch (e) {}
+  }
+  return null;
+}
 
 export const getDeviceId = () => {
   let id = localStorage.getItem('titan_device_id');
@@ -89,6 +145,9 @@ export async function removePairedDevice(deviceId) {
 export async function generateShareLink(file, type = 'file', textContent = '') {
   const formData = new FormData();
   formData.append('type', type);
+  formData.append('creatorDeviceId', getDeviceId());
+  formData.append('creatorDeviceName', getDeviceName());
+
   if (type === 'text') {
     formData.append('textContent', textContent);
   } else if (file) {
@@ -108,8 +167,10 @@ export async function generateShareLink(file, type = 'file', textContent = '') {
 export async function generateFolderShareLink(files, folderName) {
   const formData = new FormData();
   formData.append('folderName', folderName);
-  const relativePaths = [];
+  formData.append('creatorDeviceId', getDeviceId());
+  formData.append('creatorDeviceName', getDeviceName());
 
+  const relativePaths = [];
   for (let i = 0; i < files.length; i++) {
     const file = files[i];
     formData.append('files', file);
@@ -128,7 +189,8 @@ export async function generateFolderShareLink(files, folderName) {
 
 export async function getLinksList() {
   try {
-    const res = await fetch(`${getServerUrl()}/api/links/list`);
+    const myId = getDeviceId();
+    const res = await fetch(`${getServerUrl()}/api/links/list?creatorDeviceId=${encodeURIComponent(myId)}`);
     if (res.ok) return await res.json();
   } catch (e) {}
   return [];
@@ -182,44 +244,101 @@ function tryDecodeSelfContained(str) {
 }
 
 export async function getLinkInfo(tokenOrUrl) {
-  let token = tokenOrUrl.trim();
+  let token = (tokenOrUrl || '').trim();
 
-  // 1. First check if token is self-contained!
+  // 1. First check if token itself is self-contained base64
   const selfContained = tryDecodeSelfContained(token);
   if (selfContained && !selfContained.isExpired) {
+    if (selfContained.laptopIp && selfContained.laptopIp !== '127.0.0.1' && selfContained.laptopIp !== 'localhost') {
+      setServerUrl(`http://${selfContained.laptopIp}:${selfContained.laptopPort || 51733}`);
+    }
     return selfContained;
   }
 
   let targetUrl = '';
+  let parsedOrigin = '';
+  let cleanToken = token;
 
-  // If user pasted a full URL
+  // If user pasted a full URL (e.g. http://10.89.213.60:51733/d/... or https://...)
   if (token.startsWith('http://') || token.startsWith('https://')) {
     try {
       const parsed = new URL(token);
-      const origin = parsed.origin;
-      const cleanToken = token.includes('/d/') 
-        ? token.split('/d/')[1].split('/')[0].split('?')[0] 
-        : token.split('/').pop().split('?')[0];
-      targetUrl = `${origin}/api/links/info/${cleanToken}`;
-      token = cleanToken;
+      parsedOrigin = parsed.origin;
+      if (token.includes('/d/')) {
+        cleanToken = token.split('/d/')[1].split('/')[0].split('?')[0];
+      } else if (token.includes('/')) {
+        cleanToken = token.split('/').pop().split('?')[0];
+      }
+
+      // If it's a LAN laptop IP, save it immediately as our active server
+      if (parsed.hostname && parsed.hostname !== 'localhost' && !parsed.hostname.includes('vercel.app')) {
+        setServerUrl(parsedOrigin);
+        // Also save to paired list
+        try {
+          const local = JSON.parse(localStorage.getItem('titan_local_paired') || '[]');
+          if (!local.some(d => d.ip === parsed.hostname)) {
+            local.push({
+              deviceId: 'lap_' + parsed.hostname,
+              deviceName: 'Host Laptop (' + parsed.hostname + ')',
+              deviceType: 'laptop',
+              ip: parsed.hostname,
+              port: parsed.port || 51733,
+              pairedAt: Date.now()
+            });
+            localStorage.setItem('titan_local_paired', JSON.stringify(local));
+          }
+        } catch (e) {}
+      }
+
+      // Check if cleanToken inside URL is self-contained
+      const subSelf = tryDecodeSelfContained(cleanToken);
+      if (subSelf && !subSelf.isExpired) {
+        return subSelf;
+      }
+
+      targetUrl = `${parsedOrigin}/api/links/info/${cleanToken}`;
     } catch (e) {}
   }
 
   if (!targetUrl) {
-    targetUrl = `${getServerUrl()}/api/links/info/${token}`;
+    targetUrl = `${getServerUrl()}/api/links/info/${cleanToken}`;
   }
 
+  // 2. Fetch metadata from host server
   try {
-    const res = await fetch(targetUrl, { signal: AbortSignal.timeout(4000) });
-    if (res.ok) return await res.json();
+    const res = await fetch(targetUrl, { signal: AbortSignal.timeout(3500) });
+    if (res.ok) {
+      const data = await res.json();
+      return data;
+    }
   } catch (e) {}
 
-  // Fallback to Vercel HTTPS validator if local didn't answer
+  // 3. Fallback to Vercel validator
   try {
-    const vercelFallback = `https://titan-plus-share.vercel.app/api/links/info/${token}`;
-    const vRes = await fetch(vercelFallback, { signal: AbortSignal.timeout(4000) });
-    if (vRes.ok) return await vRes.json();
+    const vercelFallback = `https://titan-plus-share.vercel.app/api/links/info/${cleanToken}`;
+    const vRes = await fetch(vercelFallback, { signal: AbortSignal.timeout(3500) });
+    if (vRes.ok) {
+      const vData = await vRes.json();
+      return vData;
+    }
   } catch (e) {}
+
+  // 4. Fallback for direct IP links: if URL was valid http://<ip>:<port>/d/<token>, return downloadable metadata
+  if (parsedOrigin && cleanToken) {
+    const directUrl = `${parsedOrigin}/api/links/download/${cleanToken}`;
+    return {
+      token: cleanToken,
+      fileName: 'Titan_Shared_File',
+      fileSize: 0,
+      type: 'file',
+      laptopIp: new URL(parsedOrigin).hostname,
+      laptopPort: new URL(parsedOrigin).port || 51733,
+      directUrl: directUrl,
+      isExpired: false,
+      remainingSeconds: 10800,
+      expiresAt: Date.now() + 3 * 3600 * 1000
+    };
+  }
 
   if (selfContained && selfContained.isExpired) {
     throw new Error('Link has expired (3 hour limit reached)');

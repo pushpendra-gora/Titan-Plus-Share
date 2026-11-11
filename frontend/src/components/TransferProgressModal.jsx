@@ -47,7 +47,8 @@ export default function TransferProgressModal({ targetDevice, item, onClose }) {
       }
     } else {
       // Mobile sending to Laptop: Send directly to Laptop Server host
-      const targetHost = targetDevice.ip ? `http://${targetDevice.ip}:${targetDevice.port || 51733}` : getServerUrl();
+      const validIp = targetDevice.ip && targetDevice.ip !== 'LAN' && targetDevice.ip !== '127.0.0.1' && targetDevice.ip !== 'localhost' ? targetDevice.ip : null;
+      const targetHost = validIp ? `http://${validIp}:${targetDevice.port || 51733}` : getServerUrl();
       targetEndpoint = `${targetHost}/api/transfer/send`;
     }
 
