@@ -39,13 +39,15 @@ module.exports = (req, res) => {
   const remainingSeconds = Math.max(0, Math.floor((link.expiresAt - now) / 1000));
   const directDownload = link.directUrl || `http://${link.laptopIp}:${link.laptopPort}/api/links/download/${link.token}`;
 
+  const isText = link.type === 'text' || !!link.textContent;
+
   res.setHeader('Content-Type', 'text/html; charset=utf-8');
   return res.status(200).send(`<!DOCTYPE html>
   <html lang="en">
   <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Download ${link.fileName} - Titan Plus Share</title>
+    <title>${isText ? 'Shared Text Note' : `Download ${link.fileName}`} - Titan Plus Share</title>
     <style>
       body {
         font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
@@ -101,6 +103,21 @@ module.exports = (req, res) => {
         color: #64748b;
         margin-bottom: 24px;
       }
+      .text-box {
+        background: #f8fafc;
+        border: 1px solid #e2e8f0;
+        border-radius: 16px;
+        padding: 16px;
+        font-family: monospace;
+        font-size: 13px;
+        color: #0f172a;
+        text-align: left;
+        max-height: 200px;
+        overflow-y: auto;
+        white-space: pre-wrap;
+        margin-bottom: 20px;
+        user-select: text;
+      }
       .btn-download {
         display: block;
         width: 100%;
@@ -114,6 +131,8 @@ module.exports = (req, res) => {
         border-radius: 18px;
         box-shadow: 0 8px 24px rgba(37, 99, 235, 0.35);
         transition: transform 0.2s, background 0.2s;
+        cursor: pointer;
+        border: none;
       }
       .btn-download:hover {
         background: #1d4ed8;
@@ -141,14 +160,33 @@ module.exports = (req, res) => {
     <div class="card">
       <img src="https://raw.githubusercontent.com/pushpendra-gora/Titan-Plus-Share/main/assets/logo.png" alt="Titan Plus Share" class="logo" />
       <div class="brand">Titan Plus Share</div>
-      <div class="file-icon">📦</div>
-      <div class="filename">${link.fileName}</div>
-      <div class="filesize">${fileSizeMb > 0 ? fileSizeMb + ' MB' : link.fileSize + ' B'}</div>
-      <a class="btn-download" href="${directDownload}">Download from Laptop</a>
+      <div class="file-icon">${isText ? '📝' : '📦'}</div>
+      <div class="filename">${isText ? 'Shared Text Note' : link.fileName}</div>
+      <div class="filesize">${isText ? `${(link.textContent || '').length} characters` : (fileSizeMb > 0 ? fileSizeMb + ' MB' : link.fileSize + ' B')}</div>
+
+      ${isText ? `
+        <div class="text-box" id="noteContent">${link.textContent || ''}</div>
+        <button class="btn-download" id="copyBtn" onclick="copyText()">Copy Text</button>
+      ` : `
+        <a class="btn-download" href="${directDownload}">Download from Laptop</a>
+      `}
+
       <div class="timer" id="countdown">Valid for 3 hours</div>
       <div class="note">Transferred directly peer-to-peer from host laptop without server limits.</div>
     </div>
     <script>
+      function copyText() {
+        const text = document.getElementById('noteContent').innerText;
+        navigator.clipboard.writeText(text);
+        const btn = document.getElementById('copyBtn');
+        btn.innerText = 'Copied to Clipboard!';
+        btn.style.background = '#059669';
+        setTimeout(() => {
+          btn.innerText = 'Copy Text';
+          btn.style.background = '#2563eb';
+        }, 2000);
+      }
+
       let remaining = ${remainingSeconds};
       function update() {
         if (remaining <= 0) {

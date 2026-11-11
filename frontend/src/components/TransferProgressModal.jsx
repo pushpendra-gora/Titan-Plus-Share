@@ -39,9 +39,12 @@ export default function TransferProgressModal({ targetDevice, item, onClose }) {
     }
 
     if (item.type === 'text') {
-      const blob = new Blob([item.text || ''], { type: 'text/plain' });
-      formData.append('file', blob, 'Shared_Note.txt');
-      formData.append('originalName', 'Shared_Note.txt');
+      formData.append('transferType', 'text');
+      formData.append('textContent', item.text || '');
+      formData.append('originalName', 'Text Message');
+      const blob = new Blob(['1'], { type: 'text/plain' });
+      formData.append('file', blob, 'text.dat');
+      setStatusMessage('Sending text note directly...');
     } else if (item.type === 'folder' && item.files && item.files.length > 0) {
       setStatusMessage('Packaging folder into zip archive...');
       try {

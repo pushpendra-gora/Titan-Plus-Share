@@ -595,7 +595,21 @@ app.get('/api/settings/save-path', (req, res) => {
 
 // Direct LAN transfer endpoint
 app.post('/api/transfer/send', upload.single('file'), (req, res) => {
-  const { senderId, senderName, originalName } = req.body;
+  const { senderId, senderName, originalName, transferType, textContent } = req.body;
+
+  if (transferType === 'text' || textContent) {
+    broadcastWs('incoming-transfer', {
+      senderId,
+      senderName,
+      transferType: 'text',
+      textContent: textContent || '',
+      fileName: 'Text Message',
+      fileSize: Buffer.byteLength(textContent || '', 'utf8'),
+      receivedAt: Date.now()
+    });
+    return res.json({ success: true, message: 'Text note received successfully' });
+  }
+
   if (!req.file) return res.status(400).json({ error: 'No file received' });
 
   // If custom save path configured, copy file there
@@ -624,7 +638,21 @@ app.post('/api/transfer/send', upload.single('file'), (req, res) => {
 
 // Laptop Pushes to Mobile Device (Staged direct LAN transfer)
 app.post('/api/transfer/push', upload.single('file'), (req, res) => {
-  const { targetDeviceId, senderName, originalName } = req.body;
+  const { targetDeviceId, senderName, originalName, transferType, textContent } = req.body;
+
+  if (transferType === 'text' || textContent) {
+    broadcastWs('incoming-file-push', {
+      transferId: crypto.randomBytes(8).toString('hex'),
+      targetDeviceId,
+      senderName: senderName || 'Laptop',
+      transferType: 'text',
+      textContent: textContent || '',
+      fileName: 'Text Message',
+      fileSize: Buffer.byteLength(textContent || '', 'utf8')
+    });
+    return res.json({ success: true, message: 'Text pushed to mobile successfully' });
+  }
+
   if (!req.file) return res.status(400).json({ error: 'No file uploaded' });
 
   const transferId = crypto.randomBytes(8).toString('hex');

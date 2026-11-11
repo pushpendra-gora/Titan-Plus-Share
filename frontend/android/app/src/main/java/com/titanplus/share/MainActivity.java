@@ -1,33 +1,50 @@
 package com.titanplus.share;
 
 import android.Manifest;
+import android.app.DownloadManager;
+import android.app.NotificationChannel;
+import android.app.NotificationManager;
+import android.app.PendingIntent;
+import android.content.Context;
 import android.content.Intent;
 import android.content.pm.PackageManager;
 import android.database.Cursor;
+import android.media.MediaScannerConnection;
 import android.net.Uri;
 import android.os.Build;
 import android.os.Bundle;
+import android.os.Environment;
 import android.provider.OpenableColumns;
+import android.util.Base64;
+import android.webkit.JavascriptInterface;
 import android.webkit.PermissionRequest;
 import android.webkit.WebChromeClient;
 import android.webkit.WebView;
 import androidx.annotation.NonNull;
 import androidx.core.app.ActivityCompat;
+import androidx.core.app.NotificationCompat;
 import androidx.core.content.ContextCompat;
 import com.getcapacitor.BridgeActivity;
+
+import java.io.File;
+import java.io.FileOutputStream;
 
 public class MainActivity extends BridgeActivity {
 
     private static final int PERMISSION_REQ_CODE = 200;
+    private static final String CHANNEL_ID = "titan_plus_share_channel";
 
     @Override
     public void onCreate(Bundle savedInstanceState) {
         super.onCreate(savedInstanceState);
 
-        // 1. Request camera and storage permissions on launch
+        // 1. Create Android Notification Channel
+        createNotificationChannel();
+
+        // 2. Request camera, storage, and notification permissions
         requestAppPermissions();
 
-        // 2. Enable WebRTC Camera Access in Android WebView
+        // 3. Enable WebRTC Camera Access & Native JS Bridge
         if (getBridge() != null && getBridge().getWebView() != null) {
             WebView webView = getBridge().getWebView();
             webView.getSettings().setMediaPlaybackRequiresUserGesture(false);
@@ -35,23 +52,123 @@ public class MainActivity extends BridgeActivity {
             webView.setWebChromeClient(new WebChromeClient() {
                 @Override
                 public void onPermissionRequest(final PermissionRequest request) {
-                    runOnUiThread(() -> {
-                        request.grant(request.getResources());
-                    });
+                    runOnUiThread(() -> request.grant(request.getResources()));
                 }
             });
+
+            // Native bridge for notifications and direct file saving
+            webView.addJavascriptInterface(new TitanNativeBridge(), "TitanNativeBridge");
         }
 
         handleSendIntent(getIntent());
     }
 
+    private void createNotificationChannel() {
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
+            CharSequence name = "Titan Plus Share";
+            String description = "Transfer and file notifications";
+            int importance = NotificationManager.IMPORTANCE_HIGH;
+            NotificationChannel channel = new NotificationChannel(CHANNEL_ID, name, importance);
+            channel.setDescription(description);
+            channel.enableVibration(true);
+            channel.enableLights(true);
+
+            NotificationManager notificationManager = getSystemService(NotificationManager.class);
+            if (notificationManager != null) {
+                notificationManager.createNotificationChannel(channel);
+            }
+        }
+    }
+
     private void requestAppPermissions() {
         if (ContextCompat.checkSelfPermission(this, Manifest.permission.CAMERA) != PackageManager.PERMISSION_GRANTED) {
-            ActivityCompat.requestPermissions(this, new String[]{
-                Manifest.permission.CAMERA,
-                Manifest.permission.READ_EXTERNAL_STORAGE,
-                Manifest.permission.WRITE_EXTERNAL_STORAGE
-            }, PERMISSION_REQ_CODE);
+            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU) {
+                ActivityCompat.requestPermissions(this, new String[]{
+                    Manifest.permission.CAMERA,
+                    Manifest.permission.POST_NOTIFICATIONS,
+                    Manifest.permission.READ_MEDIA_IMAGES,
+                    Manifest.permission.READ_MEDIA_VIDEO
+                }, PERMISSION_REQ_CODE);
+            } else {
+                ActivityCompat.requestPermissions(this, new String[]{
+                    Manifest.permission.CAMERA,
+                    Manifest.permission.READ_EXTERNAL_STORAGE,
+                    Manifest.permission.WRITE_EXTERNAL_STORAGE
+                }, PERMISSION_REQ_CODE);
+            }
+        }
+    }
+
+    public class TitanNativeBridge {
+        @JavascriptInterface
+        public void showNotification(String title, String message) {
+            try {
+                Intent intent = new Intent(MainActivity.this, MainActivity.class);
+                intent.setFlags(Intent.FLAG_ACTIVITY_CLEAR_TOP | Intent.FLAG_ACTIVITY_SINGLE_TOP);
+                PendingIntent pendingIntent = PendingIntent.getActivity(
+                    MainActivity.this, 0, intent,
+                    PendingIntent.FLAG_UPDATE_CURRENT | (Build.VERSION.SDK_INT >= Build.VERSION_CODES.M ? PendingIntent.FLAG_IMMUTABLE : 0)
+                );
+
+                NotificationCompat.Builder builder = new NotificationCompat.Builder(MainActivity.this, CHANNEL_ID)
+                    .setSmallIcon(R.mipmap.ic_launcher)
+                    .setContentTitle(title)
+                    .setContentText(message)
+                    .setPriority(NotificationCompat.PRIORITY_HIGH)
+                    .setAutoCancel(true)
+                    .setContentIntent(pendingIntent)
+                    .setDefaults(NotificationCompat.DEFAULT_ALL);
+
+                NotificationManager notificationManager = (NotificationManager) getSystemService(Context.NOTIFICATION_SERVICE);
+                if (notificationManager != null) {
+                    notificationManager.notify((int) System.currentTimeMillis(), builder.build());
+                }
+            } catch (Exception e) {
+                e.printStackTrace();
+            }
+        }
+
+        @JavascriptInterface
+        public boolean saveBase64ToDownloads(String base64Data, String fileName) {
+            try {
+                byte[] bytes = Base64.decode(base64Data, Base64.DEFAULT);
+                File downloadDir = Environment.getExternalStoragePublicDirectory(Environment.DIRECTORY_DOWNLOADS);
+                File targetDir = new File(downloadDir, "TitanPlusShare");
+                if (!targetDir.exists()) targetDir.mkdirs();
+
+                File targetFile = new File(targetDir, fileName);
+                try (FileOutputStream fos = new FileOutputStream(targetFile)) {
+                    fos.write(bytes);
+                    fos.flush();
+                }
+
+                MediaScannerConnection.scanFile(MainActivity.this, new String[]{targetFile.getAbsolutePath()}, null, null);
+                showNotification("File Saved!", fileName + " saved to Downloads/TitanPlusShare");
+                return true;
+            } catch (Exception e) {
+                e.printStackTrace();
+                return false;
+            }
+        }
+
+        @JavascriptInterface
+        public void downloadViaManager(String downloadUrl, String fileName, String title) {
+            try {
+                DownloadManager.Request request = new DownloadManager.Request(Uri.parse(downloadUrl));
+                request.setTitle(title != null ? title : fileName);
+                request.setDescription("Downloading via Titan Plus Share");
+                request.setNotificationVisibility(DownloadManager.Request.VISIBILITY_VISIBLE_NOTIFY_COMPLETED);
+                request.setDestinationInExternalPublicDir(Environment.DIRECTORY_DOWNLOADS, "TitanPlusShare/" + fileName);
+                request.setAllowedOverMetered(true);
+                request.setAllowedOverRoaming(true);
+
+                DownloadManager manager = (DownloadManager) getSystemService(Context.DOWNLOAD_SERVICE);
+                if (manager != null) {
+                    manager.enqueue(request);
+                }
+            } catch (Exception e) {
+                e.printStackTrace();
+            }
         }
     }
 
