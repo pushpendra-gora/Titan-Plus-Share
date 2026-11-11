@@ -1,0 +1,25 @@
+Windows Registry Editor Version 5.00
+
+[HKEY_CURRENT_USER\Software\Classes\*\shell\TitanPlusShare]
+@="Share with Titan Plus Share"
+"Icon"="\"C:\\Users\\pushp\\Documents\\Titan Plus Share\\assets\\app.ico\""
+"Position"="Top"
+
+[HKEY_CURRENT_USER\Software\Classes\*\shell\TitanPlusShare\command]
+@="\"C:\\Users\\pushp\\Documents\\Titan Plus Share\\Titan-Plus-Share.exe\" \"%1\""
+
+[HKEY_CURRENT_USER\Software\Classes\Directory\shell\TitanPlusShare]
+@="Share with Titan Plus Share"
+"Icon"="\"C:\\Users\\pushp\\Documents\\Titan Plus Share\\assets\\app.ico\""
+"Position"="Top"
+
+[HKEY_CURRENT_USER\Software\Classes\Directory\shell\TitanPlusShare\command]
+@="\"C:\\Users\\pushp\\Documents\\Titan Plus Share\\Titan-Plus-Share.exe\" \"%1\""
+
+[HKEY_CURRENT_USER\Software\Classes\AllFilesystemObjects\shell\TitanPlusShare]
+@="Share with Titan Plus Share"
+"Icon"="\"C:\\Users\\pushp\\Documents\\Titan Plus Share\\assets\\app.ico\""
+"Position"="Top"
+
+[HKEY_CURRENT_USER\Software\Classes\AllFilesystemObjects\shell\TitanPlusShare\command]
+@="\"C:\\Users\\pushp\\Documents\\Titan Plus Share\\Titan-Plus-Share.exe\" \"%1\""

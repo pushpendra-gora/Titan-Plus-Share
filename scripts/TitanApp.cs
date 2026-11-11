@@ -32,8 +32,8 @@ namespace TitanPlusShare
                 }
             }
 
-            // 3. Send file if provided
-            if (!string.IsNullOrEmpty(fileToShare) && File.Exists(fileToShare))
+            // 3. Send file or folder if provided
+            if (!string.IsNullOrEmpty(fileToShare) && (File.Exists(fileToShare) || Directory.Exists(fileToShare)))
             {
                 SendFileToApp(fileToShare);
             }
