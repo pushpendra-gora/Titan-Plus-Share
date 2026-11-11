@@ -213,12 +213,29 @@ app.delete('/api/pair/:deviceId', (req, res) => {
   res.json({ success: true });
 });
 
+function makeSelfContainedToken(linkEntry, token) {
+  const primaryIp = getLocalIpAddresses()[0];
+  const min = {
+    i: token,
+    n: linkEntry.fileName,
+    s: linkEntry.fileSize,
+    t: linkEntry.type,
+    h: primaryIp,
+    p: PORT,
+    e: linkEntry.expiresAt
+  };
+  return Buffer.from(JSON.stringify(min)).toString('base64url');
+}
+
 async function registerWithVercel(linkEntry, token) {
   const vercelRelay = process.env.VERCEL_RELAY_URL || 'https://titan-plus-share.vercel.app';
   const primaryIp = getLocalIpAddresses()[0];
+  const selfToken = makeSelfContainedToken(linkEntry, token);
+
   try {
     const payload = {
       token,
+      selfToken,
       fileName: linkEntry.fileName,
       fileSize: linkEntry.fileSize,
       type: linkEntry.type,
@@ -237,7 +254,7 @@ async function registerWithVercel(linkEntry, token) {
       if (data.httpsUrl) return data.httpsUrl;
     }
   } catch (err) {}
-  return `http://${primaryIp}:${PORT}/d/${token}`;
+  return `http://${primaryIp}:${PORT}/d/${selfToken}`;
 }
 
 app.post('/api/links/create', upload.single('file'), async (req, res) => {
@@ -356,9 +373,23 @@ app.post('/api/links/create-folder', upload.array('files'), async (req, res) => 
   }
 });
 
+function findLink(token) {
+  let link = sharedLinks.find((l) => l.id === token);
+  if (!link) {
+    try {
+      const raw = Buffer.from(token, 'base64url').toString('utf8');
+      const p = JSON.parse(raw);
+      if (p && p.i) {
+        link = sharedLinks.find((l) => l.id === p.i);
+      }
+    } catch (e) {}
+  }
+  return link;
+}
+
 app.get('/api/links/info/:token', (req, res) => {
   const { token } = req.params;
-  const link = sharedLinks.find((l) => l.id === token);
+  const link = findLink(token);
   if (!link) return res.status(404).json({ error: 'Link not found' });
 
   const isExpired = Date.now() > link.expiresAt;
@@ -377,7 +408,7 @@ app.get('/api/links/info/:token', (req, res) => {
 
 app.get('/api/links/download/:token', (req, res) => {
   const { token } = req.params;
-  const link = sharedLinks.find((l) => l.id === token);
+  const link = findLink(token);
   if (!link) return res.status(404).send('Link not found');
   if (Date.now() > link.expiresAt) return res.status(410).send('Link has expired (3 hour limit reached)');
 
@@ -400,7 +431,7 @@ app.get('/api/links/download/:token', (req, res) => {
 // Web download page
 app.get('/d/:token', (req, res) => {
   const { token } = req.params;
-  const link = sharedLinks.find((l) => l.id === token);
+  const link = findLink(token);
   if (!link) {
     return res.status(404).send(`
       <!DOCTYPE html>

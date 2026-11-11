@@ -37,12 +37,12 @@ module.exports = (req, res) => {
 
   const protocol = req.headers['x-forwarded-proto'] || 'https';
   const host = req.headers.host || 'localhost';
-  const httpsUrl = `${protocol}://${host}/d/${token}`;
+  const httpsUrl = `${protocol}://${host}/d/${selfToken}`;
 
   return res.status(200).json({
     success: true,
-    token,
-    selfToken,
+    token: selfToken,
+    originalToken: token,
     httpsUrl,
     directUrl: linkData.directUrl,
     expiresAt: linkData.expiresAt

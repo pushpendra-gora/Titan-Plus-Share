@@ -23,6 +23,10 @@ export default function TransferProgressModal({ targetDevice, item, onClose }) {
     const isMobileClient = /Android|iPhone|iPad/i.test(navigator.userAgent);
     const isSendingFromLaptop = !isMobileClient;
 
+    const formData = new FormData();
+    formData.append('senderId', localStorage.getItem('titan_device_id') || 'dev');
+    formData.append('senderName', localStorage.getItem('titan_device_name') || 'Device');
+
     let targetEndpoint = '';
     if (isSendingFromLaptop) {
       // Laptop sending to Mobile: Stage file on local Laptop Server to push over LAN/WebSocket
@@ -33,9 +37,6 @@ export default function TransferProgressModal({ targetDevice, item, onClose }) {
       const targetHost = targetDevice.ip ? `http://${targetDevice.ip}:${targetDevice.port || 51733}` : getServerUrl();
       targetEndpoint = `${targetHost}/api/transfer/send`;
     }
-    const formData = new FormData();
-    formData.append('senderId', localStorage.getItem('titan_device_id') || 'dev');
-    formData.append('senderName', localStorage.getItem('titan_device_name') || 'Device');
 
     if (item.type === 'text') {
       const blob = new Blob([item.text || ''], { type: 'text/plain' });

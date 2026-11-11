@@ -153,3 +153,4 @@ export default function IncomingTransferModal({ incoming, onClose }) {
     </div>
   );
 }
+

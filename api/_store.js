@@ -33,16 +33,16 @@ function decodeSelfContained(str) {
   try {
     const raw = Buffer.from(str, 'base64url').toString('utf8');
     const parsed = JSON.parse(raw);
-    if (parsed && parsed.i) {
+    if (parsed && (parsed.i || parsed.n)) {
       return {
-        token: parsed.i,
-        fileName: parsed.n,
-        fileSize: parsed.s,
-        type: parsed.t,
-        laptopIp: parsed.h,
-        laptopPort: parsed.p,
-        directUrl: parsed.u,
-        expiresAt: parsed.e
+        token: parsed.i || str,
+        fileName: parsed.n || 'Shared_File',
+        fileSize: parsed.s || 0,
+        type: parsed.t || 'file',
+        laptopIp: parsed.h || '127.0.0.1',
+        laptopPort: parsed.p || 51733,
+        directUrl: parsed.u || `http://${parsed.h || '127.0.0.1'}:${parsed.p || 51733}/api/links/download/${parsed.i || str}`,
+        expiresAt: parsed.e || (Date.now() + 3 * 3600 * 1000)
       };
     }
   } catch (e) {}

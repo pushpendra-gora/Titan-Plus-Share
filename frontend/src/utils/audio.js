@@ -27,3 +27,4 @@ export function playNotificationSound() {
     console.warn('Audio chime warning:', e);
   }
 }
+

@@ -126,9 +126,54 @@ export async function generateFolderShareLink(files, folderName) {
   return await res.json();
 }
 
+function tryDecodeSelfContained(str) {
+  try {
+    let clean = str.trim();
+    if (clean.includes('/d/')) {
+      clean = clean.split('/d/')[1].split('/')[0].split('?')[0];
+    } else if (clean.includes('/')) {
+      clean = clean.split('/').pop().split('?')[0];
+    }
+    let b64 = clean.replace(/-/g, '+').replace(/_/g, '/');
+    while (b64.length % 4) b64 += '=';
+    const jsonStr = decodeURIComponent(
+      atob(b64)
+        .split('')
+        .map(c => '%' + ('00' + c.charCodeAt(0).toString(16)).slice(-2))
+        .join('')
+    );
+    const p = JSON.parse(jsonStr);
+    if (p && (p.n || p.i) && p.e) {
+      const now = Date.now();
+      const isExpired = now > p.e;
+      const remainingSeconds = Math.max(0, Math.floor((p.e - now) / 1000));
+      return {
+        token: p.i || clean,
+        fileName: p.n || 'Shared_File',
+        fileSize: p.s || 0,
+        type: p.t || 'file',
+        laptopIp: p.h || '127.0.0.1',
+        laptopPort: p.p || 51733,
+        directUrl: p.u || `http://${p.h || '127.0.0.1'}:${p.p || 51733}/api/links/download/${p.i || clean}`,
+        isExpired,
+        remainingSeconds,
+        expiresAt: p.e
+      };
+    }
+  } catch (e) {}
+  return null;
+}
+
 export async function getLinkInfo(tokenOrUrl) {
-  let targetUrl = '';
   let token = tokenOrUrl.trim();
+
+  // 1. First check if token is self-contained!
+  const selfContained = tryDecodeSelfContained(token);
+  if (selfContained && !selfContained.isExpired) {
+    return selfContained;
+  }
+
+  let targetUrl = '';
 
   // If user pasted a full URL
   if (token.startsWith('http://') || token.startsWith('https://')) {
@@ -158,6 +203,10 @@ export async function getLinkInfo(tokenOrUrl) {
     const vRes = await fetch(vercelFallback, { signal: AbortSignal.timeout(4000) });
     if (vRes.ok) return await vRes.json();
   } catch (e) {}
+
+  if (selfContained && selfContained.isExpired) {
+    throw new Error('Link has expired (3 hour limit reached)');
+  }
 
   throw new Error('Link expired or not reachable. Ensure the host laptop is online.');
 }
