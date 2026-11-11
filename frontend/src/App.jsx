@@ -333,48 +333,6 @@ export default function App() {
       {/* DESKTOP VIEW */}
       {isDesktopMode ? (
         <div className="flex-1 flex flex-col h-screen z-10">
-          
-          {/* Windows Titlebar */}
-          <div className="h-9 bg-white/70 backdrop-blur-md border-b border-slate-100 flex items-center justify-between px-3 select-none">
-            <div className="flex items-center gap-2 text-xs font-semibold text-slate-700">
-              <img src="/logo.png" alt="Titan Plus Share" className="w-5 h-5 rounded-full object-cover shadow-sm" />
-              <span>Titan Plus Share</span>
-            </div>
-
-            {/* Laptop Host Server Status Button */}
-            <div className="flex items-center gap-2">
-              <div className={`inline-flex items-center gap-1.5 px-2.5 py-0.5 rounded-full text-[10px] font-semibold ${
-                serverOnline ? 'bg-emerald-50 text-emerald-600 border border-emerald-200' : 'bg-amber-50 text-amber-600 border border-amber-200'
-              }`}>
-                <span className={`w-1.5 h-1.5 rounded-full ${serverOnline ? 'bg-emerald-500 animate-pulse' : 'bg-amber-500'}`}></span>
-                <span>{serverOnline ? 'Laptop Server Active' : 'Connecting Server...'}</span>
-              </div>
-            </div>
-
-            <div className="flex items-center">
-              <button 
-                onClick={() => {
-                  if (document.fullscreenElement) {
-                    document.exitFullscreen().catch(() => {});
-                  } else {
-                    document.documentElement.requestFullscreen().catch(() => {});
-                  }
-                }}
-                title="Toggle Fullscreen"
-                className="w-8 h-7 flex items-center justify-center text-slate-400 hover:text-slate-600 hover:bg-slate-100 transition rounded-md"
-              >
-                <Maximize2 className="w-3.5 h-3.5" />
-              </button>
-              <button 
-                onClick={() => window.close()}
-                title="Close Application"
-                className="w-8 h-7 flex items-center justify-center text-slate-400 hover:text-rose-500 hover:bg-rose-50 transition rounded-md"
-              >
-                <CloseIcon className="w-3.5 h-3.5" />
-              </button>
-            </div>
-          </div>
-
           <div className="flex-1 flex overflow-hidden">
             {/* Sidebar Navigation */}
             <aside className="w-64 bg-white/70 backdrop-blur-md border-r border-slate-100 p-5 flex flex-col justify-between">
@@ -384,7 +342,12 @@ export default function App() {
                   <img src="/logo.png" alt="Titan Plus Share" className="w-11 h-11 rounded-2xl shadow-md shadow-blue-500/25 object-cover" />
                   <div>
                     <h1 className="font-bold text-slate-900 text-sm leading-tight">Titan Plus Share</h1>
-                    <p className="text-[11px] text-slate-400 font-medium">Fast • Simple • Anywhere</p>
+                    <div className="flex items-center gap-1.5 mt-0.5">
+                      <span className={`w-1.5 h-1.5 rounded-full ${serverOnline ? 'bg-emerald-500 animate-pulse' : 'bg-amber-500'}`} />
+                      <span className="text-[11px] text-slate-400 font-medium">
+                        {serverOnline ? 'Server Active' : 'Connecting...'}
+                      </span>
+                    </div>
                   </div>
                 </div>
 
