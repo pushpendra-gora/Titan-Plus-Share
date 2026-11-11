@@ -26,13 +26,17 @@ import androidx.core.app.NotificationCompat;
 import androidx.core.content.ContextCompat;
 import com.getcapacitor.BridgeActivity;
 
+import org.json.JSONObject;
 import java.io.File;
+import java.io.FileInputStream;
 import java.io.FileOutputStream;
+import java.io.InputStream;
 
 public class MainActivity extends BridgeActivity {
 
     private static final int PERMISSION_REQ_CODE = 200;
     private static final String CHANNEL_ID = "titan_plus_share_channel";
+    private static String pendingShareJson = null;
 
     @Override
     public void onCreate(Bundle savedInstanceState) {
@@ -170,6 +174,36 @@ public class MainActivity extends BridgeActivity {
                 e.printStackTrace();
             }
         }
+
+        @JavascriptInterface
+        public String getPendingSharedItem() {
+            String item = pendingShareJson;
+            pendingShareJson = null;
+            return item;
+        }
+
+        @JavascriptInterface
+        public String readCachedFileBase64(String path) {
+            try {
+                if (path == null) return null;
+                File f = new File(path);
+                if (!f.exists() || !f.canRead()) return null;
+                long len = f.length();
+                if (len > 35 * 1024 * 1024) return null; // Protect memory on huge files
+                byte[] bytes = new byte[(int) len];
+                try (FileInputStream fis = new FileInputStream(f)) {
+                    int offset = 0;
+                    int numRead = 0;
+                    while (offset < bytes.length && (numRead = fis.read(bytes, offset, bytes.length - offset)) >= 0) {
+                        offset += numRead;
+                    }
+                }
+                return Base64.encodeToString(bytes, Base64.NO_WRAP);
+            } catch (Exception e) {
+                e.printStackTrace();
+                return null;
+            }
+        }
     }
 
     @Override
@@ -187,23 +221,57 @@ public class MainActivity extends BridgeActivity {
         if (Intent.ACTION_SEND.equals(action) && type != null) {
             if ("text/plain".equals(type) || type.startsWith("text/")) {
                 String sharedText = intent.getStringExtra(Intent.EXTRA_TEXT);
-                if (sharedText != null) {
+                if (sharedText != null && !sharedText.trim().isEmpty()) {
+                    try {
+                        JSONObject obj = new JSONObject();
+                        obj.put("type", "text");
+                        obj.put("name", "Shared Note");
+                        obj.put("size", sharedText.length());
+                        obj.put("text", sharedText);
+                        pendingShareJson = obj.toString();
+                    } catch (Exception ignored) {}
                     dispatchToWeb("text", sharedText, "Shared Note", 0);
                 }
             } else {
                 Uri fileUri = intent.getParcelableExtra(Intent.EXTRA_STREAM);
                 if (fileUri != null) {
-                    String[] nameAndSize = getFileNameAndSize(fileUri);
-                    String fileName = nameAndSize[0];
-                    long fileSize = 0;
-                    try {
-                        fileSize = Long.parseLong(nameAndSize[1]);
-                    } catch (Exception ignored) {}
-
-                    dispatchToWeb("file", fileUri.toString(), fileName, fileSize);
+                    processIncomingFileUri(fileUri);
                 }
             }
         }
+    }
+
+    private void processIncomingFileUri(Uri fileUri) {
+        String[] nameAndSize = getFileNameAndSize(fileUri);
+        String fileName = nameAndSize[0];
+        long fileSize = 0;
+        try {
+            fileSize = Long.parseLong(nameAndSize[1]);
+        } catch (Exception ignored) {}
+
+        File cacheFile = new File(getCacheDir(), "shared_" + System.currentTimeMillis() + "_" + fileName);
+        try (InputStream in = getContentResolver().openInputStream(fileUri);
+             FileOutputStream out = new FileOutputStream(cacheFile)) {
+            byte[] buf = new byte[65536];
+            int read;
+            while (in != null && (read = in.read(buf)) != -1) {
+                out.write(buf, 0, read);
+            }
+            if (fileSize <= 0) fileSize = cacheFile.length();
+        } catch (Exception e) {
+            e.printStackTrace();
+        }
+
+        try {
+            JSONObject obj = new JSONObject();
+            obj.put("type", "file");
+            obj.put("name", fileName);
+            obj.put("size", fileSize);
+            obj.put("cachePath", cacheFile.getAbsolutePath());
+            pendingShareJson = obj.toString();
+        } catch (Exception ignored) {}
+
+        dispatchToWeb("file", cacheFile.getAbsolutePath(), fileName, fileSize);
     }
 
     private String[] getFileNameAndSize(Uri uri) {

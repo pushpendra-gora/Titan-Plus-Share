@@ -39,7 +39,15 @@ export default function SendModal({ item, onClose, onStartTransfer }) {
   // Mobile camera scanner inside modal
   const processPairing = async (decodedText) => {
     try {
-      const payload = typeof decodedText === 'string' ? JSON.parse(decodedText) : decodedText;
+      const text = typeof decodedText === 'string' ? decodedText.trim() : JSON.stringify(decodedText);
+      let payload = null;
+      try {
+        payload = JSON.parse(text);
+      } catch (e) {
+        setScanMessage('Invalid QR format. Please scan the Pairing QR code from Laptop.');
+        return;
+      }
+
       if (payload && (payload.appName === 'Titan Plus Share' || payload.token)) {
         const laptopIp = payload.ip || (payload.ips && payload.ips[0]) || '127.0.0.1';
         const laptopPort = payload.port || 51733;
@@ -72,9 +80,11 @@ export default function SendModal({ item, onClose, onStartTransfer }) {
         setScanning(false);
         await loadDevices();
         setTimeout(() => setView('devices'), 1000);
+      } else {
+        setScanMessage('Please scan a Titan Plus Share pairing QR code.');
       }
     } catch (e) {
-      alert('Invalid pairing QR format');
+      setScanMessage('Invalid pairing QR code.');
     }
   };
 

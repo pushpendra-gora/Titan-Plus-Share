@@ -13,6 +13,16 @@ export default function IncomingTransferModal({ incoming, onClose }) {
   
   const isText = incoming.transferType === 'text' || !!incoming.textContent;
 
+  const getServerHost = () => {
+    if (incoming.downloadUrl) {
+      try {
+        const u = new URL(incoming.downloadUrl);
+        return u.origin;
+      } catch (e) {}
+    }
+    return getServerUrl();
+  };
+
   const savePath = localStorage.getItem('titan_save_path') || 
     (/Android|iPhone|iPad/i.test(navigator.userAgent) 
       ? '/storage/emulated/0/Download/TitanPlusShare' 
@@ -31,10 +41,17 @@ export default function IncomingTransferModal({ incoming, onClose }) {
       window.TitanNativeBridge.showNotification(title, msg);
     }
 
-    // 3. If it's a text message, complete immediately
+    // 3. If it's a text message, complete immediately & send ACK to Laptop
     if (isText) {
       setCompleted(true);
       confetti({ particleCount: 40, spread: 50, origin: { y: 0.6 } });
+      if (incoming.transferId) {
+        fetch(`${getServerHost()}/api/transfer/ack`, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ transferId: incoming.transferId, success: true })
+        }).catch(() => {});
+      }
       return;
     }
 
@@ -97,7 +114,7 @@ export default function IncomingTransferModal({ incoming, onClose }) {
 
         // Send ACK back to server
         if (incoming.transferId) {
-          fetch(`${getServerUrl()}/api/transfer/ack`, {
+          fetch(`${getServerHost()}/api/transfer/ack`, {
             method: 'POST',
             headers: { 'Content-Type': 'application/json' },
             body: JSON.stringify({ transferId: incoming.transferId, success: true })

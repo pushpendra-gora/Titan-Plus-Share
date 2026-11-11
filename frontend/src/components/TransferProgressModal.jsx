@@ -11,13 +11,23 @@ export default function TransferProgressModal({ targetDevice, item, onClose }) {
   const [isDone, setIsDone] = useState(false);
   const [error, setError] = useState(null);
   const [statusMessage, setStatusMessage] = useState('');
+  const [waitingMobile, setWaitingMobile] = useState(false);
   const xhrRef = useRef(null);
+  const pollTimerRef = useRef(null);
+  const timeoutTimerRef = useRef(null);
+
+  const cleanupTimers = () => {
+    if (pollTimerRef.current) clearInterval(pollTimerRef.current);
+    if (timeoutTimerRef.current) clearTimeout(timeoutTimerRef.current);
+  };
 
   const startRealTransfer = async () => {
+    cleanupTimers();
     setError(null);
     setProgress(0);
     setTransferredBytes(0);
     setIsDone(false);
+    setWaitingMobile(false);
     setStatusMessage('');
 
     const isMobileClient = /Android|iPhone|iPad/i.test(navigator.userAgent);
@@ -32,6 +42,9 @@ export default function TransferProgressModal({ targetDevice, item, onClose }) {
       // Laptop sending to Mobile: Stage file on local Laptop Server to push over LAN/WebSocket
       targetEndpoint = `${getServerUrl()}/api/transfer/push`;
       formData.append('targetDeviceId', targetDevice.deviceId || '');
+      if (item.path) {
+        formData.append('filePath', item.path);
+      }
     } else {
       // Mobile sending to Laptop: Send directly to Laptop Server host
       const targetHost = targetDevice.ip ? `http://${targetDevice.ip}:${targetDevice.port || 51733}` : getServerUrl();
@@ -70,6 +83,10 @@ export default function TransferProgressModal({ targetDevice, item, onClose }) {
     } else if (item.files && item.files[0]) {
       formData.append('file', item.files[0]);
       formData.append('originalName', item.name);
+    } else if (item.path && isSendingFromLaptop) {
+      // Local path available on laptop
+      formData.append('filePath', item.path);
+      formData.append('originalName', item.name);
     } else {
       const blob = new Blob([item.name || ''], { type: 'text/plain' });
       formData.append('file', blob, item.name || 'file.dat');
@@ -83,8 +100,9 @@ export default function TransferProgressModal({ targetDevice, item, onClose }) {
 
     xhr.upload.onprogress = (e) => {
       if (e.lengthComputable) {
+        const factor = isSendingFromLaptop ? 0.5 : (item.type === 'folder' ? 0.5 : 1.0);
         const basePct = item.type === 'folder' ? 50 : 0;
-        const uploadPct = Math.round((e.loaded / e.total) * (item.type === 'folder' ? 50 : 100));
+        const uploadPct = Math.round((e.loaded / e.total) * (factor * 100));
         setProgress(basePct + uploadPct);
         setTransferredBytes(e.loaded);
 
@@ -98,14 +116,66 @@ export default function TransferProgressModal({ targetDevice, item, onClose }) {
 
     xhr.onload = () => {
       if (xhr.status >= 200 && xhr.status < 300) {
-        setProgress(100);
-        setIsDone(true);
-        setStatusMessage(isSendingFromLaptop ? 'Pushed to Mobile Device successfully!' : 'Transferred to Laptop successfully!');
-        confetti({
-          particleCount: 60,
-          spread: 60,
-          origin: { y: 0.6 }
-        });
+        let respData = {};
+        try { respData = JSON.parse(xhr.responseText); } catch (e) {}
+
+        if (isSendingFromLaptop) {
+          // Laptop staging complete: DO NOT mark done yet! Wait for Mobile to connect and pull
+          const transferId = respData.transferId;
+          setProgress(65);
+          setWaitingMobile(true);
+          setStatusMessage('Waiting for Mobile Device to connect & receive...');
+
+          // Listen for WebSocket ack/completion event
+          const handleWsAck = (e) => {
+            if (!transferId || e.detail?.transferId === transferId) {
+              cleanupTimers();
+              window.removeEventListener('titan-transfer-completed', handleWsAck);
+              setProgress(100);
+              setIsDone(true);
+              setWaitingMobile(false);
+              setStatusMessage('Transferred to Mobile Device successfully!');
+              confetti({ particleCount: 60, spread: 60, origin: { y: 0.6 } });
+            }
+          };
+          window.addEventListener('titan-transfer-completed', handleWsAck);
+
+          // Poll server transfer status every 1.5s as fallback
+          pollTimerRef.current = setInterval(async () => {
+            if (!transferId) return;
+            try {
+              const sRes = await fetch(`${getServerUrl()}/api/transfer/status/${transferId}`);
+              if (sRes.ok) {
+                const sData = await sRes.json();
+                if (sData.completed) {
+                  cleanupTimers();
+                  window.removeEventListener('titan-transfer-completed', handleWsAck);
+                  setProgress(100);
+                  setIsDone(true);
+                  setWaitingMobile(false);
+                  setStatusMessage('Transferred to Mobile Device successfully!');
+                  confetti({ particleCount: 60, spread: 60, origin: { y: 0.6 } });
+                }
+              }
+            } catch (e) {}
+          }, 1500);
+
+          // Timeout warning after 45s
+          timeoutTimerRef.current = setTimeout(() => {
+            setStatusMessage('Mobile device has not connected yet. Please open Titan Plus Share on phone.');
+          }, 45000);
+
+        } else {
+          // Mobile sent to Laptop directly: transfer finished
+          setProgress(100);
+          setIsDone(true);
+          setStatusMessage('Transferred to Laptop successfully!');
+          confetti({
+            particleCount: 60,
+            spread: 60,
+            origin: { y: 0.6 }
+          });
+        }
       } else {
         setError(`Transfer failed (HTTP ${xhr.status})`);
       }
@@ -121,6 +191,7 @@ export default function TransferProgressModal({ targetDevice, item, onClose }) {
   useEffect(() => {
     startRealTransfer();
     return () => {
+      cleanupTimers();
       if (xhrRef.current) {
         try { xhrRef.current.abort(); } catch (e) {}
       }
@@ -128,6 +199,7 @@ export default function TransferProgressModal({ targetDevice, item, onClose }) {
   }, [item, targetDevice]);
 
   const handleCancel = () => {
+    cleanupTimers();
     if (xhrRef.current) {
       try { xhrRef.current.abort(); } catch (e) {}
     }

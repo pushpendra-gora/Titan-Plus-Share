@@ -68,7 +68,7 @@ function cleanupExpiredLinks() {
       if (link.filePath && fs.existsSync(link.filePath)) {
         try {
           fs.unlinkSync(link.filePath);
-        } catch (e) {}
+        } catch (e) { }
       }
     } else {
       remaining.push(link);
@@ -104,7 +104,7 @@ const onlineClients = new Map(); // ws -> client info
 
 wss.on('connection', (ws) => {
   wsClients.add(ws);
-  
+
   ws.on('close', () => {
     wsClients.delete(ws);
     onlineClients.delete(ws);
@@ -128,7 +128,7 @@ wss.on('connection', (ws) => {
       } else if (data.type === 'transfer-progress') {
         broadcastWs('peer-transfer-progress', data);
       }
-    } catch (e) {}
+    } catch (e) { }
   });
 });
 
@@ -253,7 +253,7 @@ async function registerWithVercel(linkEntry, token) {
       const data = await response.json();
       if (data.httpsUrl) return data.httpsUrl;
     }
-  } catch (err) {}
+  } catch (err) { }
   return `http://${primaryIp}:${PORT}/d/${selfToken}`;
 }
 
@@ -331,7 +331,7 @@ app.post('/api/links/create-folder', upload.array('files'), async (req, res) => 
     output.on('close', async () => {
       // Remove raw parts
       req.files.forEach((f) => {
-        try { fs.unlinkSync(f.path); } catch (e) {}
+        try { fs.unlinkSync(f.path); } catch (e) { }
       });
 
       const now = Date.now();
@@ -382,7 +382,7 @@ function findLink(token) {
       if (p && p.i) {
         link = sharedLinks.find((l) => l.id === p.i);
       }
-    } catch (e) {}
+    } catch (e) { }
   }
   return link;
 }
@@ -575,7 +575,7 @@ app.get('/d/:token', (req, res) => {
 
 let customSavePath = path.join(os.homedir(), 'Downloads', 'TitanPlusShare');
 if (!fs.existsSync(customSavePath)) {
-  try { fs.mkdirSync(customSavePath, { recursive: true }); } catch (e) {}
+  try { fs.mkdirSync(customSavePath, { recursive: true }); } catch (e) { }
 }
 
 app.post('/api/settings/save-path', (req, res) => {
@@ -583,7 +583,7 @@ app.post('/api/settings/save-path', (req, res) => {
   if (savePath && typeof savePath === 'string') {
     customSavePath = savePath;
     if (!fs.existsSync(customSavePath)) {
-      try { fs.mkdirSync(customSavePath, { recursive: true }); } catch (e) {}
+      try { fs.mkdirSync(customSavePath, { recursive: true }); } catch (e) { }
     }
   }
   res.json({ success: true, savePath: customSavePath });
@@ -638,11 +638,24 @@ app.post('/api/transfer/send', upload.single('file'), (req, res) => {
 
 // Laptop Pushes to Mobile Device (Staged direct LAN transfer)
 app.post('/api/transfer/push', upload.single('file'), (req, res) => {
-  const { targetDeviceId, senderName, originalName, transferType, textContent } = req.body;
+  const { targetDeviceId, senderName, originalName, transferType, textContent, filePath: bodyFilePath } = req.body;
 
   if (transferType === 'text' || textContent) {
+    const transferId = crypto.randomBytes(8).toString('hex');
+    pendingPushes[transferId] = {
+      transferId,
+      targetDeviceId,
+      senderName: senderName || 'Laptop',
+      transferType: 'text',
+      textContent: textContent || '',
+      fileName: 'Text Message',
+      fileSize: Buffer.byteLength(textContent || '', 'utf8'),
+      status: 'staged',
+      createdAt: Date.now()
+    };
+
     broadcastWs('incoming-file-push', {
-      transferId: crypto.randomBytes(8).toString('hex'),
+      transferId,
       targetDeviceId,
       senderName: senderName || 'Laptop',
       transferType: 'text',
@@ -650,22 +663,40 @@ app.post('/api/transfer/push', upload.single('file'), (req, res) => {
       fileName: 'Text Message',
       fileSize: Buffer.byteLength(textContent || '', 'utf8')
     });
-    return res.json({ success: true, message: 'Text pushed to mobile successfully' });
+    return res.json({ success: true, transferId, message: 'Text staged for mobile' });
   }
 
-  if (!req.file) return res.status(400).json({ error: 'No file uploaded' });
+  let finalFilePath = null;
+  let finalFileSize = 0;
+  let finalFileName = originalName;
+
+  if (req.file) {
+    finalFilePath = req.file.path;
+    finalFileSize = req.file.size;
+    finalFileName = originalName || req.file.originalname;
+  } else if (bodyFilePath && fs.existsSync(bodyFilePath)) {
+    finalFilePath = bodyFilePath;
+    const stat = fs.statSync(bodyFilePath);
+    finalFileSize = stat.size;
+    finalFileName = originalName || path.basename(bodyFilePath);
+  }
+
+  if (!finalFilePath) {
+    return res.status(400).json({ error: 'No file uploaded or found on server' });
+  }
 
   const transferId = crypto.randomBytes(8).toString('hex');
   const primaryIp = getLocalIpAddresses()[0];
-  const fileName = originalName || req.file.originalname;
 
   pendingPushes[transferId] = {
     transferId,
     targetDeviceId,
     senderName: senderName || 'Laptop',
-    fileName,
-    fileSize: req.file.size,
-    filePath: req.file.path,
+    fileName: finalFileName,
+    fileSize: finalFileSize,
+    filePath: finalFilePath,
+    transferType: 'file',
+    status: 'staged',
     createdAt: Date.now()
   };
 
@@ -673,16 +704,16 @@ app.post('/api/transfer/push', upload.single('file'), (req, res) => {
     transferId,
     targetDeviceId,
     senderName: senderName || 'Laptop',
-    fileName,
-    fileSize: req.file.size,
+    fileName: finalFileName,
+    fileSize: finalFileSize,
     downloadUrl: `http://${primaryIp}:${PORT}/api/transfer/pull/${transferId}`
   });
 
   res.json({
     success: true,
     transferId,
-    fileName,
-    fileSize: req.file.size
+    fileName: finalFileName,
+    fileSize: finalFileSize
   });
 });
 
@@ -702,22 +733,62 @@ app.get('/api/transfer/pull/:id', (req, res) => {
   stream.pipe(res);
 
   res.on('finish', () => {
+    push.status = 'completed';
+    push.completedAt = Date.now();
     broadcastWs('transfer-completed', { transferId: id, success: true });
-    // Clean up after 30 seconds
+    // Clean up temporary uploads after 60 seconds (only if in uploads dir)
     setTimeout(() => {
       try {
-        if (fs.existsSync(push.filePath)) fs.unlinkSync(push.filePath);
-        delete pendingPushes[id];
-      } catch (e) {}
-    }, 30000);
+        if (push.filePath.includes('uploads') && fs.existsSync(push.filePath)) {
+          fs.unlinkSync(push.filePath);
+        }
+      } catch (e) { }
+    }, 60000);
   });
 });
 
 // Transfer Acknowledgment
 app.post('/api/transfer/ack', (req, res) => {
   const { transferId, success } = req.body;
+  if (transferId && pendingPushes[transferId]) {
+    pendingPushes[transferId].status = 'completed';
+    pendingPushes[transferId].completedAt = Date.now();
+  }
   broadcastWs('transfer-completed', { transferId, success: !!success });
   res.json({ success: true });
+});
+
+// Check status of a transfer (used by laptop to know when mobile finished)
+app.get('/api/transfer/status/:id', (req, res) => {
+  const { id } = req.params;
+  const push = pendingPushes[id];
+  if (!push) {
+    return res.json({ transferId: id, status: 'completed', completed: true });
+  }
+  res.json({
+    transferId: id,
+    status: push.status || 'staged',
+    completed: push.status === 'completed'
+  });
+});
+
+// Mobile checks for pending pushes (e.g., when mobile app was closed when laptop sent)
+app.get('/api/transfer/pending', (req, res) => {
+  const { deviceId } = req.query;
+  const primaryIp = getLocalIpAddresses()[0];
+  const list = Object.values(pendingPushes)
+    .filter((p) => p.status === 'staged' && (!p.targetDeviceId || !deviceId || p.targetDeviceId === deviceId))
+    .map((p) => ({
+      transferId: p.transferId,
+      targetDeviceId: p.targetDeviceId,
+      senderName: p.senderName,
+      fileName: p.fileName,
+      fileSize: p.fileSize,
+      transferType: p.transferType || 'file',
+      textContent: p.textContent || '',
+      downloadUrl: `http://${primaryIp}:${PORT}/api/transfer/pull/${p.transferId}`
+    }));
+  res.json(list);
 });
 
 // UDP LAN Discovery
@@ -737,7 +808,7 @@ function startDiscovery() {
             ip: rinfo.address
           });
         }
-      } catch (e) {}
+      } catch (e) { }
     });
 
     setInterval(() => {
@@ -747,7 +818,7 @@ function startDiscovery() {
         type: 'laptop',
         port: PORT
       });
-      socket.send(beacon, 0, beacon.length, DISCOVERY_PORT, '255.255.255.255', () => {});
+      socket.send(beacon, 0, beacon.length, DISCOVERY_PORT, '255.255.255.255', () => { });
     }, 4000);
   } catch (err) {
     console.warn('UDP Discovery warning:', err.message);

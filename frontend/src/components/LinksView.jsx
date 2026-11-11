@@ -1,6 +1,7 @@
-import React, { useState } from 'react';
-import { Link as LinkIcon, Download, CheckCircle, Clock, FileText, AlertCircle, RefreshCw } from 'lucide-react';
+import React, { useState, useEffect } from 'react';
+import { Link as LinkIcon, Download, CheckCircle, Clock, FileText, AlertCircle, RefreshCw, QrCode, Clipboard, Camera, X } from 'lucide-react';
 import { getLinkInfo, formatBytes, getServerUrl } from '../api';
+import { Html5QrcodeScanner } from 'html5-qrcode';
 
 export default function LinksView() {
   const [urlInput, setUrlInput] = useState('');
@@ -9,26 +10,30 @@ export default function LinksView() {
   const [error, setError] = useState(null);
   const [downloading, setDownloading] = useState(false);
   const [progress, setProgress] = useState(0);
+  const [showScanner, setShowScanner] = useState(false);
 
-  const extractToken = (text) => {
-    const trimmed = text.trim();
-    if (trimmed.includes('/d/')) {
-      return trimmed.split('/d/')[1].split('/')[0].split('?')[0];
+  // Check if a link was passed from scanner or other view
+  useEffect(() => {
+    const pending = localStorage.getItem('titan_pending_download_link');
+    if (pending) {
+      localStorage.removeItem('titan_pending_download_link');
+      setUrlInput(pending);
+      validateLink(pending);
     }
-    return trimmed;
-  };
+  }, []);
 
-  const handleValidate = async () => {
+  const validateLink = async (linkToValidate) => {
+    const target = (linkToValidate || urlInput).trim();
     setError(null);
     setFileInfo(null);
-    if (!urlInput.trim()) {
+    if (!target) {
       setError('Please enter a valid link or token');
       return;
     }
 
     setLoading(true);
     try {
-      const info = await getLinkInfo(urlInput);
+      const info = await getLinkInfo(target);
       setFileInfo(info);
     } catch (err) {
       setError(err.message || 'Link expired or not reachable. Ensure the host laptop is online.');
@@ -37,14 +42,64 @@ export default function LinksView() {
     }
   };
 
+  const handleValidate = () => validateLink(urlInput);
+
+  const handlePaste = async () => {
+    try {
+      const text = await navigator.clipboard.readText();
+      if (text) {
+        setUrlInput(text.trim());
+        validateLink(text.trim());
+      }
+    } catch (e) {
+      setError('Clipboard access denied. Please paste manually.');
+    }
+  };
+
+  // Live QR Scanner for Link
+  useEffect(() => {
+    if (!showScanner) return;
+    let scanner = null;
+    try {
+      scanner = new Html5QrcodeScanner('link-qr-reader', {
+        fps: 10,
+        qrbox: { width: 220, height: 220 },
+        videoConstraints: { facingMode: { ideal: "environment" } }
+      });
+      scanner.render(
+        (decodedText) => {
+          setUrlInput(decodedText.trim());
+          setShowScanner(false);
+          try { scanner.clear(); } catch (e) {}
+          validateLink(decodedText.trim());
+        },
+        () => {}
+      );
+    } catch (e) {}
+
+    return () => {
+      if (scanner) {
+        try { scanner.clear(); } catch (e) {}
+      }
+    };
+  }, [showScanner]);
+
   const handleStartDownload = () => {
     if (!fileInfo) return;
     setDownloading(true);
-    setProgress(20);
+    setProgress(30);
 
     const downloadUrl = fileInfo.directUrl || `${getServerUrl()}/api/links/download/${fileInfo.token}`;
     
-    // Animate progress then trigger browser download
+    // Check if native Android DownloadManager is available
+    if (window.TitanNativeBridge && typeof window.TitanNativeBridge.downloadViaManager === 'function') {
+      window.TitanNativeBridge.downloadViaManager(downloadUrl, fileInfo.fileName, 'Titan Plus Share');
+      setProgress(100);
+      setTimeout(() => setDownloading(false), 800);
+      return;
+    }
+
+    // Web / Desktop fallback
     const intv = setInterval(() => {
       setProgress((p) => {
         if (p >= 100) {
@@ -68,16 +123,39 @@ export default function LinksView() {
   return (
     <div className="max-w-xl mx-auto px-4 py-6 animate-fadeIn">
       {/* Header */}
-      <div className="mb-6">
-        <h2 className="text-xl font-bold text-slate-800">Remote Downloads</h2>
-        <p className="text-xs text-slate-500">Paste any Titan Plus Share link to download securely</p>
+      <div className="mb-6 flex items-center justify-between">
+        <div>
+          <h2 className="text-xl font-bold text-slate-800">Remote Downloads</h2>
+          <p className="text-xs text-slate-500">Paste or scan any Titan Plus Share link to download</p>
+        </div>
+        <button
+          onClick={() => setShowScanner(!showScanner)}
+          className="px-3 py-2 bg-slate-100 hover:bg-slate-200 text-slate-700 rounded-xl text-xs font-semibold flex items-center gap-1.5 transition"
+        >
+          <Camera className="w-3.5 h-3.5 text-blue-600" />
+          <span>{showScanner ? 'Close Scanner' : 'Scan QR'}</span>
+        </button>
       </div>
+
+      {/* QR Scanner Container */}
+      {showScanner && (
+        <div className="bg-white rounded-[22px] p-5 shadow-card border border-blue-100 mb-6 animate-fadeIn text-center">
+          <div className="flex items-center justify-between mb-3">
+            <h4 className="text-xs font-bold text-slate-700">Scan Link QR Code</h4>
+            <button onClick={() => setShowScanner(false)} className="text-slate-400 hover:text-slate-600">
+              <X className="w-4 h-4" />
+            </button>
+          </div>
+          <div id="link-qr-reader" className="w-full max-w-[280px] mx-auto overflow-hidden rounded-xl"></div>
+          <p className="text-[11px] text-slate-400 mt-2">Point camera at the Download QR on your laptop</p>
+        </div>
+      )}
 
       {/* Input Card */}
       <div className="bg-white rounded-[22px] p-5 shadow-card border border-slate-100 mb-6">
         <label className="block text-xs font-semibold text-slate-600 mb-2">Download Link</label>
         <div className="flex items-center gap-2">
-          <div className="flex-1 flex items-center gap-2 px-3.5 py-3 bg-slate-50 border border-slate-200 rounded-xl focus-within:ring-2 focus-within:ring-blue-500/30 focus-within:border-blue-500 transition">
+          <div className="flex-1 flex items-center gap-2 px-3 py-2.5 bg-slate-50 border border-slate-200 rounded-xl focus-within:ring-2 focus-within:ring-blue-500/30 focus-within:border-blue-500 transition">
             <LinkIcon className="w-4 h-4 text-blue-600 shrink-0" />
             <input
               type="text"
@@ -86,6 +164,14 @@ export default function LinksView() {
               placeholder="Paste Titan Plus link here..."
               className="bg-transparent text-xs text-slate-800 font-medium w-full outline-none"
             />
+            <button
+              onClick={handlePaste}
+              title="Paste from clipboard"
+              className="px-2 py-1 text-[11px] font-semibold text-blue-600 hover:bg-blue-50 rounded-md shrink-0 flex items-center gap-1 transition"
+            >
+              <Clipboard className="w-3 h-3" />
+              <span>Paste</span>
+            </button>
           </div>
           <button
             onClick={handleValidate}

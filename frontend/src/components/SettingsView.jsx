@@ -62,7 +62,27 @@ export default function SettingsView({ isMobileMode }) {
 
   const processPairingPayload = async (decodedText) => {
     try {
-      const payload = typeof decodedText === 'string' ? JSON.parse(decodedText) : decodedText;
+      const text = typeof decodedText === 'string' ? decodedText.trim() : JSON.stringify(decodedText);
+
+      // Check if user scanned a download link QR code instead of a pairing QR
+      if (text.startsWith('http://') || text.startsWith('https://') || text.includes('/d/')) {
+        localStorage.setItem('titan_pending_download_link', text);
+        setScanResult('Detected Titan Plus Share Download link! Switching to Remote Downloads...');
+        setScanning(false);
+        setTimeout(() => {
+          if (typeof onNavigate === 'function') onNavigate('links');
+        }, 1000);
+        return;
+      }
+
+      let payload = null;
+      try {
+        payload = JSON.parse(text);
+      } catch (e) {
+        setScanResult('Invalid QR code format. Please scan the Pairing QR code from Laptop.');
+        return;
+      }
+
       if (payload && (payload.appName === 'Titan Plus Share' || payload.token)) {
         const laptopIp = payload.ip || (payload.ips && payload.ips[0]) || '127.0.0.1';
         const laptopPort = payload.port || 51733;
@@ -100,11 +120,11 @@ export default function SettingsView({ isMobileMode }) {
         setScanning(false);
         await reloadData();
       } else {
-        alert('Not a Titan Plus Share pairing QR code');
+        setScanResult('Not a Titan Plus Share pairing QR code. Please scan the QR from Laptop Settings.');
       }
     } catch (err) {
       console.error('Pairing QR parse error:', err);
-      alert('Invalid pairing QR format: ' + (err.message || 'Parse error'));
+      setScanResult('Could not parse QR code. Please try again.');
     }
   };
 

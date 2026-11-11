@@ -62,6 +62,52 @@ export default function App() {
 
   // Listen for Android System Share events (when shared from other apps on mobile)
   useEffect(() => {
+    const checkNativeShare = () => {
+      if (window.TitanNativeBridge && typeof window.TitanNativeBridge.getPendingSharedItem === 'function') {
+        try {
+          const raw = window.TitanNativeBridge.getPendingSharedItem();
+          if (raw) {
+            const item = JSON.parse(raw);
+            if (item.type === 'text') {
+              setSelectedItem({
+                type: 'text',
+                name: item.name || 'Shared Note',
+                size: item.text?.length || 0,
+                text: item.text
+              });
+            } else if (item.type === 'file') {
+              let fileObj = null;
+              if (item.cachePath && window.TitanNativeBridge.readCachedFileBase64) {
+                try {
+                  const b64 = window.TitanNativeBridge.readCachedFileBase64(item.cachePath);
+                  if (b64) {
+                    const byteChars = atob(b64);
+                    const byteNums = new Array(byteChars.length);
+                    for (let i = 0; i < byteChars.length; i++) {
+                      byteNums[i] = byteChars.charCodeAt(i);
+                    }
+                    const byteArray = new Uint8Array(byteNums);
+                    fileObj = new File([byteArray], item.name, { type: 'application/octet-stream' });
+                  }
+                } catch (e) {}
+              }
+              setSelectedItem({
+                type: 'file',
+                name: item.name || 'Shared File',
+                size: item.size || fileObj?.size || 0,
+                file: fileObj,
+                uri: item.cachePath
+              });
+            }
+          }
+        } catch (e) {}
+      }
+    };
+
+    checkNativeShare();
+    const sharePoll = setInterval(checkNativeShare, 1200);
+    window.addEventListener('focus', checkNativeShare);
+
     const handleIncomingShare = (e) => {
       if (e.detail) {
         const { type, payload, name, size } = e.detail;
@@ -83,7 +129,12 @@ export default function App() {
       }
     };
     window.addEventListener('incoming-share', handleIncomingShare);
-    return () => window.removeEventListener('incoming-share', handleIncomingShare);
+
+    return () => {
+      clearInterval(sharePoll);
+      window.removeEventListener('focus', checkNativeShare);
+      window.removeEventListener('incoming-share', handleIncomingShare);
+    };
   }, []);
 
   // Listen for Windows Explorer Context Menu Share events
@@ -124,6 +175,16 @@ export default function App() {
             deviceType: /Android|iPhone|iPad/i.test(navigator.userAgent) ? 'mobile' : 'laptop'
           };
           ws.send(JSON.stringify(idPayload));
+
+          // Also check for any pending pushes staged while this client was disconnected/closed
+          fetch(`${getServerUrl()}/api/transfer/pending?deviceId=${getDeviceId()}`)
+            .then(r => r.json())
+            .then(pending => {
+              if (pending && pending.length > 0) {
+                setIncomingTransfer(pending[0]);
+              }
+            })
+            .catch(() => {});
         };
 
         ws.onmessage = (event) => {
@@ -134,6 +195,8 @@ export default function App() {
               if (!data.payload.targetDeviceId || data.payload.targetDeviceId === myId) {
                 setIncomingTransfer(data.payload);
               }
+            } else if (data.event === 'transfer-completed') {
+              window.dispatchEvent(new CustomEvent('titan-transfer-completed', { detail: data.payload }));
             } else if (data.event === 'incoming-transfer') {
               const isMobile = /Android|iPhone|iPad/i.test(navigator.userAgent);
               if (!isMobile) {
