@@ -1,0 +1,29 @@
+# Dependencies
+node_modules/
+frontend/node_modules/
+server/node_modules/
+
+# Android build outputs & Gradle cache
+frontend/android/.gradle/
+frontend/android/build/
+frontend/android/app/build/
+.gradle/
+local.properties
+
+# Server temporary files & uploads
+server/data/uploads/
+server/data/*.json
+
+# Logs & temp
+npm-debug.log*
+yarn-debug.log*
+yarn-error.log*
+.DS_Store
+Thumbs.db
+*.log
+
+# System files
+.gemini/
+.idea/
+.vscode/
+

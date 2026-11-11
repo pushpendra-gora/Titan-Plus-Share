@@ -1,0 +1,19 @@
+{
+  "name": "titan-plus-share-server",
+  "version": "1.0.0",
+  "description": "Core backend server for Titan Plus Share: LAN transfer, device pairing, and 3-hour remote link sharing",
+  "main": "server.js",
+  "type": "commonjs",
+  "scripts": {
+    "start": "node server.js"
+  },
+  "dependencies": {
+    "archiver": "^7.0.1",
+    "cors": "^2.8.5",
+    "express": "^4.21.2",
+    "multer": "^1.4.5-lts.1",
+    "qrcode": "^1.5.4",
+    "ws": "^8.18.0"
+  }
+}
+

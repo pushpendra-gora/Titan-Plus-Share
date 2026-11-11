@@ -1,0 +1,9 @@
+{
+  "version": 2,
+  "rewrites": [
+    { "source": "/d/:token", "destination": "/api/d?token=:token" },
+    { "source": "/api/links/info/:token", "destination": "/api/links/info?token=:token" },
+    { "source": "/api/links/register", "destination": "/api/links/register" }
+  ]
+}
+

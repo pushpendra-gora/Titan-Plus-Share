@@ -1,0 +1,13 @@
+{
+  "name": "titan-plus-share-desktop",
+  "version": "1.0.0",
+  "description": "Titan Plus Share - Desktop application and local server for Windows PC",
+  "main": "main.js",
+  "scripts": {
+    "start": "electron ."
+  },
+  "dependencies": {
+    "electron": "^33.4.11",
+    "electron-packager": "^17.1.2"
+  }
+}
