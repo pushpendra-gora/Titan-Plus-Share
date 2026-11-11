@@ -1,6 +1,6 @@
 import React, { useState, useEffect } from 'react';
-import { Link as LinkIcon, Download, CheckCircle, Clock, FileText, AlertCircle, RefreshCw, QrCode, Clipboard, Camera, X } from 'lucide-react';
-import { getLinkInfo, formatBytes, getServerUrl } from '../api';
+import { Link as LinkIcon, Download, CheckCircle, Clock, FileText, AlertCircle, RefreshCw, QrCode, Clipboard, Camera, X, Trash2, Copy, CheckCircle2, ArrowDownCircle, ExternalLink } from 'lucide-react';
+import { getLinkInfo, formatBytes, getServerUrl, getLinksList, deleteLink } from '../api';
 import { Html5QrcodeScanner } from 'html5-qrcode';
 
 export default function LinksView() {
@@ -11,6 +11,95 @@ export default function LinksView() {
   const [downloading, setDownloading] = useState(false);
   const [progress, setProgress] = useState(0);
   const [showScanner, setShowScanner] = useState(false);
+  const [myLinks, setMyLinks] = useState([]);
+  const [copiedToken, setCopiedToken] = useState(null);
+  const [viewQrLink, setViewQrLink] = useState(null);
+
+  // Load active shared links & history
+  const loadLinksHistory = async () => {
+    try {
+      const serverList = await getLinksList();
+      const localList = JSON.parse(localStorage.getItem('titan_local_created_links') || '[]');
+      
+      // Merge server list with local history
+      const map = new Map();
+      (serverList || []).forEach(item => map.set(item.id, item));
+      localList.forEach(item => {
+        const id = item.token || item.id;
+        if (!map.has(id)) {
+          map.set(id, {
+            id,
+            fileName: item.fileName,
+            fileSize: item.fileSize,
+            type: item.type || 'file',
+            createdAt: item.createdAt,
+            expiresAt: item.expiresAt,
+            status: Date.now() > item.expiresAt ? 'expired' : (item.status || 'pending'),
+            downloadProgress: item.downloadProgress || 0,
+            url: item.url,
+            qrCode: item.qrCode
+          });
+        }
+      });
+
+      setMyLinks(Array.from(map.values()).sort((a, b) => (b.createdAt || 0) - (a.createdAt || 0)));
+    } catch (e) {
+      console.warn('Could not load links list:', e);
+    }
+  };
+
+  useEffect(() => {
+    loadLinksHistory();
+
+    const handleProgress = (e) => {
+      if (e.detail?.token) {
+        setMyLinks(prev => prev.map(l => {
+          if (l.id === e.detail.token) {
+            return {
+              ...l,
+              status: e.detail.percent >= 100 ? 'downloaded' : 'downloading',
+              downloadProgress: e.detail.percent
+            };
+          }
+          return l;
+        }));
+      }
+    };
+
+    const handleCompleted = (e) => {
+      if (e.detail?.token) {
+        setMyLinks(prev => prev.map(l => {
+          if (l.id === e.detail.token) {
+            return {
+              ...l,
+              status: 'downloaded',
+              downloadProgress: 100,
+              downloadCount: (l.downloadCount || 0) + 1,
+              lastDownloadedAt: e.detail.downloadedAt || Date.now()
+            };
+          }
+          return l;
+        }));
+      }
+    };
+
+    const handleLinksUpdated = () => {
+      loadLinksHistory();
+    };
+
+    window.addEventListener('titan-link-progress', handleProgress);
+    window.addEventListener('titan-link-completed', handleCompleted);
+    window.addEventListener('titan-links-updated', handleLinksUpdated);
+
+    const intv = setInterval(loadLinksHistory, 4000);
+
+    return () => {
+      window.removeEventListener('titan-link-progress', handleProgress);
+      window.removeEventListener('titan-link-completed', handleCompleted);
+      window.removeEventListener('titan-links-updated', handleLinksUpdated);
+      clearInterval(intv);
+    };
+  }, []);
 
   // Check if a link was passed from scanner or other view
   useEffect(() => {
@@ -113,6 +202,22 @@ export default function LinksView() {
     }, 150);
   };
 
+  const handleDeleteHistoryLink = async (tokenId) => {
+    await deleteLink(tokenId);
+    const local = JSON.parse(localStorage.getItem('titan_local_created_links') || '[]')
+      .filter(l => (l.token || l.id) !== tokenId);
+    localStorage.setItem('titan_local_created_links', JSON.stringify(local));
+    loadLinksHistory();
+  };
+
+  const handleCopyHistoryLink = (url, id) => {
+    if (url) {
+      navigator.clipboard.writeText(url);
+      setCopiedToken(id);
+      setTimeout(() => setCopiedToken(null), 2000);
+    }
+  };
+
   const formatRemaining = (seconds) => {
     if (seconds <= 0) return 'Expired';
     const h = Math.floor(seconds / 3600);
@@ -192,7 +297,7 @@ export default function LinksView() {
 
       {/* File Metadata Preview Card */}
       {fileInfo && (
-        <div className="bg-white rounded-[22px] p-6 shadow-card border border-slate-100 animate-scaleIn">
+        <div className="bg-white rounded-[22px] p-6 shadow-card border border-slate-100 animate-scaleIn mb-6">
           <div className="flex items-center gap-3.5 mb-5">
             <div className="w-12 h-12 rounded-xl bg-blue-50 text-blue-600 border border-blue-100 flex items-center justify-center font-bold text-sm shrink-0">
               <FileText className="w-6 h-6" />
@@ -233,6 +338,158 @@ export default function LinksView() {
           </button>
         </div>
       )}
+
+      {/* Section: Active Shared Links & History */}
+      <div className="mt-8">
+        <div className="flex items-center justify-between mb-3 px-1">
+          <h3 className="text-sm font-bold text-slate-800 flex items-center gap-2">
+            <LinkIcon className="w-4 h-4 text-blue-600" />
+            <span>Shared Links History</span>
+          </h3>
+          <span className="text-xs text-slate-400 font-medium">{myLinks.length} total</span>
+        </div>
+
+        {myLinks.length === 0 ? (
+          <div className="p-8 text-center bg-white rounded-[22px] border border-slate-100 text-slate-400">
+            <LinkIcon className="w-8 h-8 mx-auto mb-2 opacity-30 text-blue-600" />
+            <p className="text-xs font-medium">No links generated yet</p>
+            <p className="text-[11px] mt-0.5">When you share via "Generate Link", tracking appears here</p>
+          </div>
+        ) : (
+          <div className="space-y-3">
+            {myLinks.map((link) => {
+              const isExpired = link.isExpired || (link.expiresAt && Date.now() > link.expiresAt);
+              const isDownloaded = link.status === 'downloaded' || (link.downloadCount > 0);
+              const isDownloading = link.status === 'downloading';
+              const progress = link.downloadProgress || 0;
+
+              return (
+                <div 
+                  key={link.id}
+                  className="p-4 bg-white rounded-2xl border border-slate-100 shadow-sm hover:border-slate-200 transition"
+                >
+                  <div className="flex items-start justify-between gap-3 mb-2">
+                    <div className="flex items-center gap-3 min-w-0 flex-1">
+                      <div className="w-10 h-10 rounded-xl bg-blue-50 text-blue-600 flex items-center justify-center shrink-0 border border-blue-100">
+                        <FileText className="w-5 h-5" />
+                      </div>
+                      <div className="min-w-0 flex-1">
+                        <h4 className="text-xs font-semibold text-slate-800 truncate">{link.fileName}</h4>
+                        <p className="text-[11px] text-slate-400 font-medium">
+                          {formatBytes(link.fileSize)} • {link.remainingSeconds > 0 ? formatRemaining(link.remainingSeconds) : 'Expired'}
+                        </p>
+                      </div>
+                    </div>
+
+                    {/* Status Badge */}
+                    <div className="shrink-0">
+                      {isDownloading ? (
+                        <span className="inline-flex items-center gap-1 px-2.5 py-1 rounded-full text-[11px] font-bold bg-blue-50 text-blue-600 border border-blue-200 animate-pulse">
+                          Downloading {progress}%
+                        </span>
+                      ) : isDownloaded ? (
+                        <span className="inline-flex items-center gap-1 px-2.5 py-1 rounded-full text-[11px] font-bold bg-emerald-50 text-emerald-600 border border-emerald-200">
+                          <CheckCircle2 className="w-3 h-3" />
+                          <span>Downloaded</span>
+                        </span>
+                      ) : isExpired ? (
+                        <span className="inline-flex items-center gap-1 px-2.5 py-1 rounded-full text-[11px] font-bold bg-slate-100 text-slate-500">
+                          Expired
+                        </span>
+                      ) : (
+                        <span className="inline-flex items-center gap-1 px-2.5 py-1 rounded-full text-[11px] font-bold bg-amber-50 text-amber-600 border border-amber-200">
+                          <Clock className="w-3 h-3" />
+                          <span>Waiting</span>
+                        </span>
+                      )}
+                    </div>
+                  </div>
+
+                  {/* Live Progress Bar if actively downloading */}
+                  {isDownloading && (
+                    <div className="mt-2 mb-2">
+                      <div className="w-full bg-slate-100 h-1.5 rounded-full overflow-hidden">
+                        <div 
+                          className="bg-blue-600 h-full transition-all duration-300 rounded-full"
+                          style={{ width: `${progress}%` }}
+                        />
+                      </div>
+                    </div>
+                  )}
+
+                  {/* Actions Row */}
+                  <div className="flex items-center justify-between pt-2 border-t border-slate-50 mt-2 text-xs">
+                    <span className="text-[11px] text-slate-400">
+                      {isDownloaded 
+                        ? `Downloaded ${link.downloadCount || 1} time(s)` 
+                        : (isExpired ? 'Link Expired' : 'Active for download')}
+                    </span>
+                    <div className="flex items-center gap-1">
+                      <button
+                        onClick={() => handleCopyHistoryLink(link.url, link.id)}
+                        className="px-2.5 py-1 text-[11px] font-semibold text-slate-600 hover:text-blue-600 hover:bg-slate-50 rounded-lg flex items-center gap-1 transition"
+                      >
+                        {copiedToken === link.id ? (
+                          <>
+                            <CheckCircle2 className="w-3 h-3 text-emerald-600" />
+                            <span className="text-emerald-600">Copied</span>
+                          </>
+                        ) : (
+                          <>
+                            <Copy className="w-3 h-3" />
+                            <span>Copy</span>
+                          </>
+                        )}
+                      </button>
+
+                      {link.qrCode && (
+                        <button
+                          onClick={() => setViewQrLink(link)}
+                          className="px-2.5 py-1 text-[11px] font-semibold text-slate-600 hover:text-blue-600 hover:bg-slate-50 rounded-lg flex items-center gap-1 transition"
+                        >
+                          <QrCode className="w-3 h-3" />
+                          <span>QR</span>
+                        </button>
+                      )}
+
+                      <button
+                        onClick={() => handleDeleteHistoryLink(link.id)}
+                        title="Delete Link"
+                        className="p-1 text-slate-400 hover:text-rose-600 hover:bg-rose-50 rounded-lg transition"
+                      >
+                        <Trash2 className="w-3.5 h-3.5" />
+                      </button>
+                    </div>
+                  </div>
+                </div>
+              );
+            })}
+          </div>
+        )}
+      </div>
+
+      {/* QR Code Popup Modal */}
+      {viewQrLink && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-slate-900/40 backdrop-blur-sm animate-fadeIn">
+          <div className="w-full max-w-sm bg-white rounded-[26px] p-6 shadow-modal border border-slate-100 text-center animate-scaleIn">
+            <div className="flex items-center justify-between mb-4">
+              <h4 className="text-sm font-bold text-slate-800 truncate pr-2">{viewQrLink.fileName}</h4>
+              <button onClick={() => setViewQrLink(null)} className="text-slate-400 hover:text-slate-600">
+                <X className="w-4 h-4" />
+              </button>
+            </div>
+            <img src={viewQrLink.qrCode} alt="QR Code" className="w-48 h-48 mx-auto rounded-xl shadow-sm border border-slate-200 mb-3" />
+            <p className="text-xs text-slate-500 mb-4">Scan with any phone camera to download</p>
+            <button
+              onClick={() => setViewQrLink(null)}
+              className="w-full py-2.5 bg-slate-100 hover:bg-slate-200 text-slate-700 font-semibold text-xs rounded-xl transition"
+            >
+              Close
+            </button>
+          </div>
+        </div>
+      )}
+
     </div>
   );
 }

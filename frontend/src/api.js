@@ -126,6 +126,23 @@ export async function generateFolderShareLink(files, folderName) {
   return await res.json();
 }
 
+export async function getLinksList() {
+  try {
+    const res = await fetch(`${getServerUrl()}/api/links/list`);
+    if (res.ok) return await res.json();
+  } catch (e) {}
+  return [];
+}
+
+export async function deleteLink(token) {
+  try {
+    await fetch(`${getServerUrl()}/api/links/${token}`, { method: 'DELETE' });
+    return true;
+  } catch (e) {
+    return false;
+  }
+}
+
 function tryDecodeSelfContained(str) {
   try {
     let clean = str.trim();

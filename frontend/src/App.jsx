@@ -197,6 +197,15 @@ export default function App() {
               }
             } else if (data.event === 'transfer-completed') {
               window.dispatchEvent(new CustomEvent('titan-transfer-completed', { detail: data.payload }));
+            } else if (data.event === 'link-download-progress') {
+              window.dispatchEvent(new CustomEvent('titan-link-progress', { detail: data.payload }));
+            } else if (data.event === 'link-download-completed') {
+              window.dispatchEvent(new CustomEvent('titan-link-completed', { detail: data.payload }));
+              if (window.TitanNativeBridge && typeof window.TitanNativeBridge.showNotification === 'function') {
+                window.TitanNativeBridge.showNotification('File Downloaded!', `Link download complete for: ${data.payload.fileName}`);
+              }
+            } else if (data.event === 'links-updated') {
+              window.dispatchEvent(new CustomEvent('titan-links-updated', { detail: data.payload }));
             } else if (data.event === 'incoming-transfer') {
               const isMobile = /Android|iPhone|iPad/i.test(navigator.userAgent);
               if (!isMobile) {

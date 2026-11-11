@@ -1,7 +1,8 @@
 import React, { useState, useEffect, useRef } from 'react';
-import { X, Wifi, Link as LinkIcon, Laptop, Smartphone, CheckCircle, Copy, QrCode, ArrowRight, Clock, Plus, Camera, RefreshCw, Image } from 'lucide-react';
+import { X, Wifi, Link as LinkIcon, Laptop, Smartphone, CheckCircle, Copy, QrCode, ArrowRight, Clock, Plus, Camera, RefreshCw, Image, ArrowDownCircle, CheckCircle2 } from 'lucide-react';
 import { formatBytes, generateShareLink, generateFolderShareLink, getPairedDevices, getServerUrl, getPairingInfo, getDeviceId, getDeviceName, authenticateDevice } from '../api';
 import { Html5QrcodeScanner, Html5Qrcode } from 'html5-qrcode';
+import confetti from 'canvas-confetti';
 
 export default function SendModal({ item, onClose, onStartTransfer }) {
   const [view, setView] = useState('menu'); // 'menu' | 'devices' | 'pairing' | 'link'
@@ -13,6 +14,7 @@ export default function SendModal({ item, onClose, onStartTransfer }) {
   const [pairingData, setPairingData] = useState(null);
   const [scanning, setScanning] = useState(false);
   const [scanMessage, setScanMessage] = useState(null);
+  const [liveDownload, setLiveDownload] = useState(null); // { percent, status: 'waiting'|'downloading'|'completed' }
   const imageInputRef = useRef(null);
 
   const loadDevices = async () => {
@@ -143,6 +145,24 @@ export default function SendModal({ item, onClose, onStartTransfer }) {
         res = await generateShareLink(item.file, item.type);
       }
       setLinkData(res);
+      setLiveDownload({ status: 'waiting', percent: 0 });
+
+      // Save to local link history
+      try {
+        const localHistory = JSON.parse(localStorage.getItem('titan_local_created_links') || '[]');
+        const updated = [{
+          token: res.token,
+          fileName: res.fileName,
+          fileSize: res.fileSize,
+          url: res.url,
+          qrCode: res.qrCode,
+          createdAt: Date.now(),
+          expiresAt: res.expiresAt,
+          status: 'pending'
+        }, ...localHistory.filter(l => l.token !== res.token)].slice(0, 50);
+        localStorage.setItem('titan_local_created_links', JSON.stringify(updated));
+      } catch (e) {}
+
       setView('link');
     } catch (err) {
       alert('Error generating link: ' + err.message);
@@ -150,6 +170,36 @@ export default function SendModal({ item, onClose, onStartTransfer }) {
       setLoading(false);
     }
   };
+
+  // Listen for real-time recipient download progress on this generated link
+  useEffect(() => {
+    if (!linkData?.token) return;
+
+    const handleProgress = (e) => {
+      if (e.detail?.token === linkData.token) {
+        setLiveDownload({
+          percent: e.detail.percent || 0,
+          bytesSent: e.detail.bytesSent || 0,
+          totalBytes: e.detail.totalBytes || 0,
+          status: e.detail.percent >= 100 ? 'completed' : 'downloading'
+        });
+      }
+    };
+
+    const handleCompleted = (e) => {
+      if (e.detail?.token === linkData.token) {
+        setLiveDownload({ percent: 100, status: 'completed' });
+        confetti({ particleCount: 70, spread: 60, origin: { y: 0.6 } });
+      }
+    };
+
+    window.addEventListener('titan-link-progress', handleProgress);
+    window.addEventListener('titan-link-completed', handleCompleted);
+    return () => {
+      window.removeEventListener('titan-link-progress', handleProgress);
+      window.removeEventListener('titan-link-completed', handleCompleted);
+    };
+  }, [linkData]);
 
   const handleCopy = () => {
     if (linkData?.url) {
@@ -437,6 +487,57 @@ export default function SendModal({ item, onClose, onStartTransfer }) {
                 <p className="text-[11px] text-slate-400 mt-2">Scan with camera to download on any device</p>
               </div>
             )}
+
+            {/* Real-time Receiver Download Status Card */}
+            <div className="mb-4 p-3.5 bg-slate-50 rounded-2xl border border-slate-200 text-left">
+              <div className="flex items-center justify-between mb-2">
+                <span className="text-xs font-bold text-slate-700 flex items-center gap-1.5">
+                  <ArrowDownCircle className="w-4 h-4 text-blue-600" />
+                  <span>Receiver Download Status</span>
+                </span>
+                {liveDownload?.status === 'downloading' && (
+                  <span className="text-xs font-bold text-blue-600 animate-pulse">{liveDownload.percent}%</span>
+                )}
+                {liveDownload?.status === 'completed' && (
+                  <span className="text-xs font-bold text-emerald-600 flex items-center gap-1">
+                    <CheckCircle2 className="w-3.5 h-3.5" />
+                    <span>Completed</span>
+                  </span>
+                )}
+                {(!liveDownload || liveDownload.status === 'waiting') && (
+                  <span className="text-[11px] text-amber-600 font-semibold bg-amber-50 px-2 py-0.5 rounded-full border border-amber-200">
+                    Waiting for receiver...
+                  </span>
+                )}
+              </div>
+
+              {liveDownload?.status === 'downloading' && (
+                <div>
+                  <div className="w-full bg-slate-200 h-2 rounded-full overflow-hidden mb-1.5">
+                    <div 
+                      className="bg-blue-600 h-full transition-all duration-300 rounded-full"
+                      style={{ width: `${liveDownload.percent}%` }}
+                    />
+                  </div>
+                  <div className="flex justify-between text-[11px] text-slate-500 font-medium">
+                    <span>Downloading to receiver device...</span>
+                    <span>{formatBytes(liveDownload.bytesSent)} / {formatBytes(liveDownload.totalBytes)}</span>
+                  </div>
+                </div>
+              )}
+
+              {liveDownload?.status === 'completed' && (
+                <p className="text-xs text-emerald-600 font-semibold mt-1">
+                  Recipient has downloaded this file successfully!
+                </p>
+              )}
+
+              {(!liveDownload || liveDownload.status === 'waiting') && (
+                <p className="text-[11px] text-slate-500">
+                  When recipient clicks your link or scans the QR, live progress will display here in real time.
+                </p>
+              )}
+            </div>
 
             <div className="flex items-center justify-center gap-2 text-xs text-slate-400 mb-4">
               <Clock className="w-3.5 h-3.5" />

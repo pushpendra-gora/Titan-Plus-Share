@@ -1,4 +1,4 @@
-const express = require('express');
+ const express = require('express');
 const cors = require('cors');
 const multer = require('multer');
 const http = require('http');
@@ -285,13 +285,20 @@ app.post('/api/links/create', upload.single('file'), async (req, res) => {
       return res.status(400).json({ error: 'No content provided' });
     }
 
-    sharedLinks.push(linkEntry);
-    saveJson(LINKS_FILE, sharedLinks);
-
     const primaryIp = getLocalIpAddresses()[0];
     const fullUrl = await registerWithVercel(linkEntry, token);
     const localUrl = `http://${primaryIp}:${PORT}/d/${token}`;
     const qrDataUrl = await QRCode.toDataURL(fullUrl, { margin: 1, width: 220 });
+
+    linkEntry.url = fullUrl;
+    linkEntry.localUrl = localUrl;
+    linkEntry.qrCode = qrDataUrl;
+    linkEntry.status = 'pending';
+    linkEntry.downloadProgress = 0;
+
+    sharedLinks.push(linkEntry);
+    saveJson(LINKS_FILE, sharedLinks);
+    broadcastWs('links-updated', sharedLinks);
 
     res.json({
       success: true,
@@ -348,13 +355,20 @@ app.post('/api/links/create-folder', upload.array('files'), async (req, res) => 
         downloadCount: 0
       };
 
-      sharedLinks.push(linkEntry);
-      saveJson(LINKS_FILE, sharedLinks);
-
       const primaryIp = getLocalIpAddresses()[0];
       const fullUrl = await registerWithVercel(linkEntry, token);
       const localUrl = `http://${primaryIp}:${PORT}/d/${token}`;
       const qrDataUrl = await QRCode.toDataURL(fullUrl, { margin: 1, width: 220 });
+
+      linkEntry.url = fullUrl;
+      linkEntry.localUrl = localUrl;
+      linkEntry.qrCode = qrDataUrl;
+      linkEntry.status = 'pending';
+      linkEntry.downloadProgress = 0;
+
+      sharedLinks.push(linkEntry);
+      saveJson(LINKS_FILE, sharedLinks);
+      broadcastWs('links-updated', sharedLinks);
 
       res.json({
         success: true,
@@ -406,18 +420,67 @@ app.get('/api/links/info/:token', (req, res) => {
   });
 });
 
+app.get('/api/links/list', (req, res) => {
+  const now = Date.now();
+  const primaryIp = getLocalIpAddresses()[0];
+  const list = sharedLinks.map((l) => ({
+    id: l.id,
+    fileName: l.fileName,
+    fileSize: l.fileSize,
+    type: l.type,
+    createdAt: l.createdAt,
+    expiresAt: l.expiresAt,
+    downloadCount: l.downloadCount || 0,
+    status: now > l.expiresAt ? 'expired' : (l.status || (l.downloadCount > 0 ? 'downloaded' : 'pending')),
+    downloadProgress: l.downloadProgress || (l.downloadCount > 0 ? 100 : 0),
+    lastDownloadedAt: l.lastDownloadedAt || null,
+    remainingSeconds: Math.max(0, Math.floor((l.expiresAt - now) / 1000)),
+    isExpired: now > l.expiresAt,
+    url: l.url || `https://titan-plus-share.vercel.app/d/${l.id}`,
+    localUrl: l.localUrl || `http://${primaryIp}:${PORT}/d/${l.id}`,
+    directUrl: `http://${primaryIp}:${PORT}/api/links/download/${l.id}`,
+    qrCode: l.qrCode || null
+  }));
+  res.json(list);
+});
+
+app.delete('/api/links/:token', (req, res) => {
+  const { token } = req.params;
+  const idx = sharedLinks.findIndex((l) => l.id === token);
+  if (idx >= 0) {
+    const link = sharedLinks[idx];
+    if (link.filePath && link.filePath.includes('uploads') && fs.existsSync(link.filePath)) {
+      try { fs.unlinkSync(link.filePath); } catch (e) {}
+    }
+    sharedLinks.splice(idx, 1);
+    saveJson(LINKS_FILE, sharedLinks);
+    broadcastWs('links-updated', sharedLinks);
+  }
+  res.json({ success: true });
+});
+
 app.get('/api/links/download/:token', (req, res) => {
   const { token } = req.params;
   const link = findLink(token);
   if (!link) return res.status(404).send('Link not found');
   if (Date.now() > link.expiresAt) return res.status(410).send('Link has expired (3 hour limit reached)');
 
-  link.downloadCount = (link.downloadCount || 0) + 1;
-  saveJson(LINKS_FILE, sharedLinks);
-
   if (link.type === 'text') {
+    link.downloadCount = (link.downloadCount || 0) + 1;
+    link.status = 'downloaded';
+    link.downloadProgress = 100;
+    link.lastDownloadedAt = Date.now();
+    saveJson(LINKS_FILE, sharedLinks);
+
+    broadcastWs('link-download-completed', {
+      token: link.id,
+      fileName: link.fileName,
+      downloadedAt: link.lastDownloadedAt
+    });
+    broadcastWs('links-updated', sharedLinks);
+
     res.setHeader('Content-Type', 'text/plain; charset=utf-8');
-    res.setHeader('Content-Disposition', `attachment; filename="${link.fileName}"`);
+    res.setHeader('Content-Disposition', `attachment; filename="${encodeURIComponent(link.fileName)}"`);
     return res.send(link.textContent);
   }
 
@@ -425,7 +488,60 @@ app.get('/api/links/download/:token', (req, res) => {
     return res.status(404).send('File missing on host');
   }
 
-  res.download(link.filePath, link.fileName);
+  const stat = fs.statSync(link.filePath);
+  const totalBytes = stat.size || link.fileSize || 1;
+  let bytesSent = 0;
+
+  link.status = 'downloading';
+  link.downloadProgress = 0;
+  broadcastWs('link-download-progress', {
+    token: link.id,
+    fileName: link.fileName,
+    bytesSent: 0,
+    totalBytes,
+    percent: 0
+  });
+
+  res.setHeader('Content-Disposition', `attachment; filename="${encodeURIComponent(link.fileName)}"`);
+  res.setHeader('Content-Type', link.mimeType || 'application/octet-stream');
+  res.setHeader('Content-Length', totalBytes);
+
+  const stream = fs.createReadStream(link.filePath);
+  let lastProgressReport = 0;
+
+  stream.on('data', (chunk) => {
+    bytesSent += chunk.length;
+    const now = Date.now();
+    if (now - lastProgressReport > 200 || bytesSent === totalBytes) {
+      lastProgressReport = now;
+      const percent = Math.min(100, Math.round((bytesSent / totalBytes) * 100));
+      link.downloadProgress = percent;
+      broadcastWs('link-download-progress', {
+        token: link.id,
+        fileName: link.fileName,
+        bytesSent,
+        totalBytes,
+        percent
+      });
+    }
+  });
+
+  stream.pipe(res);
+
+  res.on('finish', () => {
+    link.status = 'downloaded';
+    link.downloadProgress = 100;
+    link.downloadCount = (link.downloadCount || 0) + 1;
+    link.lastDownloadedAt = Date.now();
+    saveJson(LINKS_FILE, sharedLinks);
+
+    broadcastWs('link-download-completed', {
+      token: link.id,
+      fileName: link.fileName,
+      downloadedAt: link.lastDownloadedAt
+    });
+    broadcastWs('links-updated', sharedLinks);
+  });
 });
 
 // Web download page
