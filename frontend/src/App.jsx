@@ -24,7 +24,8 @@ import MediaModal from './components/MediaModal';
 import TransferProgressModal from './components/TransferProgressModal';
 import LinksView from './components/LinksView';
 import SettingsView from './components/SettingsView';
-import { getServerUrl } from './api';
+import IncomingTransferModal from './components/IncomingTransferModal';
+import { getServerUrl, getDeviceId, getDeviceName } from './api';
 
 export default function App() {
   const [activeTab, setActiveTab] = useState('home'); // 'home' | 'links' | 'settings'
@@ -32,6 +33,7 @@ export default function App() {
   const [showTextModal, setShowTextModal] = useState(false);
   const [showMediaModal, setShowMediaModal] = useState(false);
   const [transferTarget, setTransferTarget] = useState(null);
+  const [incomingTransfer, setIncomingTransfer] = useState(null);
   const [serverOnline, setServerOnline] = useState(true);
   
   // Detect Desktop vs Mobile view
@@ -101,6 +103,59 @@ export default function App() {
     checkPendingShare();
     const interval = setInterval(checkPendingShare, 2500);
     return () => clearInterval(interval);
+  }, []);
+
+  // WebSocket Live Peer & File Transfer Notification Connection
+  useEffect(() => {
+    let ws = null;
+    let reconnectTimer = null;
+
+    const connectWs = () => {
+      try {
+        const srv = getServerUrl();
+        const wsUrl = srv.replace(/^http/, 'ws') + '/ws';
+        ws = new WebSocket(wsUrl);
+
+        ws.onopen = () => {
+          const idPayload = {
+            type: 'identify',
+            deviceId: getDeviceId(),
+            deviceName: getDeviceName(),
+            deviceType: /Android|iPhone|iPad/i.test(navigator.userAgent) ? 'mobile' : 'laptop'
+          };
+          ws.send(JSON.stringify(idPayload));
+        };
+
+        ws.onmessage = (event) => {
+          try {
+            const data = JSON.parse(event.data);
+            if (data.event === 'incoming-file-push') {
+              const myId = getDeviceId();
+              if (!data.payload.targetDeviceId || data.payload.targetDeviceId === myId) {
+                setIncomingTransfer(data.payload);
+              }
+            } else if (data.event === 'incoming-transfer') {
+              const isMobile = /Android|iPhone|iPad/i.test(navigator.userAgent);
+              if (!isMobile) {
+                setIncomingTransfer({ ...data.payload, isCompleted: true });
+              }
+            }
+          } catch (e) {}
+        };
+
+        ws.onclose = () => {
+          reconnectTimer = setTimeout(connectWs, 3500);
+        };
+      } catch (err) {
+        reconnectTimer = setTimeout(connectWs, 3500);
+      }
+    };
+
+    connectWs();
+    return () => {
+      if (ws) ws.close();
+      if (reconnectTimer) clearTimeout(reconnectTimer);
+    };
   }, []);
 
   // Hidden native file pickers
@@ -542,6 +597,13 @@ export default function App() {
           targetDevice={transferTarget.device}
           item={transferTarget.item}
           onClose={() => setTransferTarget(null)}
+        />
+      )}
+
+      {incomingTransfer && (
+        <IncomingTransferModal
+          incoming={incomingTransfer}
+          onClose={() => setIncomingTransfer(null)}
         />
       )}
 

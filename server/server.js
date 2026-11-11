@@ -16,12 +16,15 @@ const DISCOVERY_PORT = 41235;
 const LINK_EXPIRY_MS = 3 * 60 * 60 * 1000; // 3 hours expiry
 const DATA_DIR = path.join(__dirname, 'data');
 const UPLOAD_DIR = path.join(DATA_DIR, 'uploads');
+const PENDING_DIR = path.join(DATA_DIR, 'pending_pushes');
 const LINKS_FILE = path.join(DATA_DIR, 'links.json');
 const PAIRED_FILE = path.join(DATA_DIR, 'paired_devices.json');
 
-[DATA_DIR, UPLOAD_DIR].forEach((dir) => {
+[DATA_DIR, UPLOAD_DIR, PENDING_DIR].forEach((dir) => {
   if (!fs.existsSync(dir)) fs.mkdirSync(dir, { recursive: true });
 });
+
+let pendingPushes = {};
 
 function loadJson(file, def) {
   try {
@@ -97,13 +100,34 @@ const server = http.createServer(app);
 const wss = new WebSocketServer({ server, path: '/ws' });
 
 const wsClients = new Set();
+const onlineClients = new Map(); // ws -> client info
+
 wss.on('connection', (ws) => {
   wsClients.add(ws);
-  ws.on('close', () => wsClients.delete(ws));
+  
+  ws.on('close', () => {
+    wsClients.delete(ws);
+    onlineClients.delete(ws);
+    broadcastWs('online-peers-updated', Array.from(onlineClients.values()));
+  });
+
   ws.on('message', (message) => {
     try {
       const data = JSON.parse(message);
-      if (data.type === 'ping') ws.send(JSON.stringify({ type: 'pong' }));
+      if (data.type === 'ping') {
+        ws.send(JSON.stringify({ type: 'pong' }));
+      } else if (data.type === 'identify') {
+        onlineClients.set(ws, {
+          deviceId: data.deviceId,
+          deviceName: data.deviceName,
+          deviceType: data.deviceType,
+          ip: ws._socket?.remoteAddress?.replace(/^.*:/, '') || 'LAN'
+        });
+        ws.deviceId = data.deviceId;
+        broadcastWs('online-peers-updated', Array.from(onlineClients.values()));
+      } else if (data.type === 'transfer-progress') {
+        broadcastWs('peer-transfer-progress', data);
+      }
     } catch (e) {}
   });
 });
@@ -565,6 +589,76 @@ app.post('/api/transfer/send', upload.single('file'), (req, res) => {
   });
 
   res.json({ success: true, message: 'Transfer received successfully', savedTo: finalDestination });
+});
+
+// Laptop Pushes to Mobile Device (Staged direct LAN transfer)
+app.post('/api/transfer/push', upload.single('file'), (req, res) => {
+  const { targetDeviceId, senderName, originalName } = req.body;
+  if (!req.file) return res.status(400).json({ error: 'No file uploaded' });
+
+  const transferId = crypto.randomBytes(8).toString('hex');
+  const primaryIp = getLocalIpAddresses()[0];
+  const fileName = originalName || req.file.originalname;
+
+  pendingPushes[transferId] = {
+    transferId,
+    targetDeviceId,
+    senderName: senderName || 'Laptop',
+    fileName,
+    fileSize: req.file.size,
+    filePath: req.file.path,
+    createdAt: Date.now()
+  };
+
+  broadcastWs('incoming-file-push', {
+    transferId,
+    targetDeviceId,
+    senderName: senderName || 'Laptop',
+    fileName,
+    fileSize: req.file.size,
+    downloadUrl: `http://${primaryIp}:${PORT}/api/transfer/pull/${transferId}`
+  });
+
+  res.json({
+    success: true,
+    transferId,
+    fileName,
+    fileSize: req.file.size
+  });
+});
+
+// Mobile Pulls/Streams the pushed file from Laptop Server
+app.get('/api/transfer/pull/:id', (req, res) => {
+  const { id } = req.params;
+  const push = pendingPushes[id];
+  if (!push || !fs.existsSync(push.filePath)) {
+    return res.status(404).send('Transfer expired or file not found');
+  }
+
+  res.setHeader('Content-Disposition', `attachment; filename="${encodeURIComponent(push.fileName)}"`);
+  res.setHeader('Content-Type', 'application/octet-stream');
+  res.setHeader('Content-Length', push.fileSize);
+
+  const stream = fs.createReadStream(push.filePath);
+  stream.pipe(res);
+
+  res.on('finish', () => {
+    broadcastWs('transfer-completed', { transferId: id, success: true });
+    // Clean up after 30 seconds
+    setTimeout(() => {
+      try {
+        if (fs.existsSync(push.filePath)) fs.unlinkSync(push.filePath);
+        delete pendingPushes[id];
+      } catch (e) {}
+    }, 30000);
+  });
+});
+
+// Transfer Acknowledgment
+app.post('/api/transfer/ack', (req, res) => {
+  const { transferId, success } = req.body;
+  broadcastWs('transfer-completed', { transferId, success: !!success });
+  res.json({ success: true });
 });
 
 // UDP LAN Discovery

@@ -20,7 +20,19 @@ export default function TransferProgressModal({ targetDevice, item, onClose }) {
     setIsDone(false);
     setStatusMessage('');
 
-    const targetHost = targetDevice.ip ? `http://${targetDevice.ip}:${targetDevice.port || 51733}` : getServerUrl();
+    const isMobileClient = /Android|iPhone|iPad/i.test(navigator.userAgent);
+    const isSendingFromLaptop = !isMobileClient;
+
+    let targetEndpoint = '';
+    if (isSendingFromLaptop) {
+      // Laptop sending to Mobile: Stage file on local Laptop Server to push over LAN/WebSocket
+      targetEndpoint = `${getServerUrl()}/api/transfer/push`;
+      formData.append('targetDeviceId', targetDevice.deviceId || '');
+    } else {
+      // Mobile sending to Laptop: Send directly to Laptop Server host
+      const targetHost = targetDevice.ip ? `http://${targetDevice.ip}:${targetDevice.port || 51733}` : getServerUrl();
+      targetEndpoint = `${targetHost}/api/transfer/send`;
+    }
     const formData = new FormData();
     formData.append('senderId', localStorage.getItem('titan_device_id') || 'dev');
     formData.append('senderName', localStorage.getItem('titan_device_name') || 'Device');
@@ -63,7 +75,7 @@ export default function TransferProgressModal({ targetDevice, item, onClose }) {
     const xhr = new XMLHttpRequest();
     xhrRef.current = xhr;
 
-    xhr.open('POST', `${targetHost}/api/transfer/send`, true);
+    xhr.open('POST', targetEndpoint, true);
 
     xhr.upload.onprogress = (e) => {
       if (e.lengthComputable) {
@@ -84,6 +96,7 @@ export default function TransferProgressModal({ targetDevice, item, onClose }) {
       if (xhr.status >= 200 && xhr.status < 300) {
         setProgress(100);
         setIsDone(true);
+        setStatusMessage(isSendingFromLaptop ? 'Pushed to Mobile Device successfully!' : 'Transferred to Laptop successfully!');
         confetti({
           particleCount: 60,
           spread: 60,
@@ -95,7 +108,7 @@ export default function TransferProgressModal({ targetDevice, item, onClose }) {
     };
 
     xhr.onerror = () => {
-      setError(`Cannot reach ${targetDevice.deviceName} at ${targetHost}. Ensure both are on the same Wi-Fi.`);
+      setError(`Cannot reach transfer engine at ${targetEndpoint}. Ensure the server is active.`);
     };
 
     xhr.send(formData);
