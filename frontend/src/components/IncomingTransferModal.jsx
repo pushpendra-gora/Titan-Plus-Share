@@ -79,7 +79,7 @@ export default function IncomingTransferModal({ incoming, onClose }) {
 
   const startPull = (downloadUrl, fileName) => {
     setDownloading(true);
-    setProgress(5);
+    setProgress(0);
     setTransferredBytes(0);
 
     const transferKey = incoming.transferId || incoming.fileName;
@@ -132,6 +132,7 @@ export default function IncomingTransferModal({ incoming, onClose }) {
         confetti({ particleCount: 60, spread: 60, origin: { y: 0.6 } });
         window.removeEventListener('titan-native-download-progress', handleNativeProg);
         window.removeEventListener('titan-native-download-complete', handleNativeDone);
+        window.removeEventListener('titan-native-download-error', handleNativeErr);
 
         window.dispatchEvent(new CustomEvent('titan-active-transfer-complete', {
           detail: { id: transferKey }
@@ -147,9 +148,10 @@ export default function IncomingTransferModal({ incoming, onClose }) {
         }
       };
 
-      const handleNativeErr = () => {
+      const handleNativeErr = (e) => {
         setDownloading(false);
         window.removeEventListener('titan-native-download-progress', handleNativeProg);
+        window.removeEventListener('titan-native-download-complete', handleNativeDone);
         window.removeEventListener('titan-native-download-error', handleNativeErr);
         window.dispatchEvent(new CustomEvent('titan-active-transfer-cancel', {
           detail: { id: transferKey }

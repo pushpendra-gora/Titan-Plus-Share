@@ -356,8 +356,29 @@ export default function App() {
               }
             } else if (data.event === 'peer-transfer-progress') {
               window.dispatchEvent(new CustomEvent('titan-peer-progress', { detail: data.payload }));
+              if (data.payload?.transferId) {
+                window.dispatchEvent(new CustomEvent('titan-active-transfer-progress', {
+                  detail: {
+                    id: data.payload.transferId,
+                    progress: data.payload.percent,
+                    speed: data.payload.speed,
+                    loaded: data.payload.loaded
+                  }
+                }));
+              }
             } else if (data.event === 'transfer-completed') {
               window.dispatchEvent(new CustomEvent('titan-transfer-completed', { detail: data.payload }));
+              if (data.payload?.transferId) {
+                window.dispatchEvent(new CustomEvent('titan-active-transfer-complete', {
+                  detail: { id: data.payload.transferId }
+                }));
+              }
+            } else if (data.event === 'transfer-cancelled') {
+              if (data.payload?.transferId) {
+                window.dispatchEvent(new CustomEvent('titan-active-transfer-cancel', {
+                  detail: { id: data.payload.transferId }
+                }));
+              }
             } else if (data.event === 'link-download-progress') {
               window.dispatchEvent(new CustomEvent('titan-link-progress', { detail: data.payload }));
             } else if (data.event === 'link-download-completed') {

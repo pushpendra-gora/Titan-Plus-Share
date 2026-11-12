@@ -979,19 +979,22 @@ app.post('/api/transfer/init-push', (req, res) => {
     createdAt: Date.now()
   };
 
-  broadcastWs('incoming-file-push', {
-    transferId,
-    targetDeviceId,
-    targetDeviceType: targetDevice?.deviceType || 'mobile',
-    targetDeviceIp: targetDevice?.ip || '',
-    senderName: senderName || 'Laptop',
-    fileName: fileName || (isText ? 'Text Message' : 'File'),
-    fileSize: fileSize || 0,
-    transferType: isText ? 'text' : 'file',
-    textContent: textContent || '',
-    serverUrl: `http://${primaryIp}:${PORT}`,
-    downloadUrl: `http://${primaryIp}:${PORT}/api/transfer/pull/${transferId}`
-  });
+  // Only broadcast immediately if it is text (since text data is already fully present in payload)
+  if (isText) {
+    broadcastWs('incoming-file-push', {
+      transferId,
+      targetDeviceId,
+      targetDeviceType: targetDevice?.deviceType || 'mobile',
+      targetDeviceIp: targetDevice?.ip || '',
+      senderName: senderName || 'Laptop',
+      fileName: 'Text Message',
+      fileSize: fileSize || 0,
+      transferType: 'text',
+      textContent: textContent || '',
+      serverUrl: `http://${primaryIp}:${PORT}`,
+      downloadUrl: `http://${primaryIp}:${PORT}/api/transfer/pull/${transferId}`
+    });
+  }
 
   res.json({
     success: true,
@@ -1012,7 +1015,9 @@ app.post('/api/transfer/push', upload.single('file'), (req, res) => {
   const transferId = existingId || crypto.randomBytes(8).toString('hex');
 
   if (transferType === 'text' || textContent) {
+    const isAlreadyCompleted = pendingPushes[transferId]?.status === 'completed';
     pendingPushes[transferId] = {
+      ...pendingPushes[transferId],
       transferId,
       targetDeviceId,
       targetDeviceType: targetDevice?.deviceType || 'mobile',
@@ -1022,25 +1027,27 @@ app.post('/api/transfer/push', upload.single('file'), (req, res) => {
       textContent: textContent || '',
       fileName: 'Text Message',
       fileSize: Buffer.byteLength(textContent || '', 'utf8'),
-      status: 'staged',
+      status: isAlreadyCompleted ? 'completed' : 'staged',
       serverUrl: `http://${primaryIp}:${PORT}`,
       downloadUrl: `http://${primaryIp}:${PORT}/api/transfer/pull/${transferId}`,
-      createdAt: Date.now()
+      createdAt: pendingPushes[transferId]?.createdAt || Date.now()
     };
 
-    broadcastWs('incoming-file-push', {
-      transferId,
-      targetDeviceId,
-      targetDeviceType: targetDevice?.deviceType || 'mobile',
-      targetDeviceIp: targetDevice?.ip || '',
-      senderName: senderName || 'Laptop',
-      transferType: 'text',
-      textContent: textContent || '',
-      fileName: 'Text Message',
-      fileSize: Buffer.byteLength(textContent || '', 'utf8'),
-      serverUrl: `http://${primaryIp}:${PORT}`,
-      downloadUrl: `http://${primaryIp}:${PORT}/api/transfer/pull/${transferId}`
-    });
+    if (!isAlreadyCompleted) {
+      broadcastWs('incoming-file-push', {
+        transferId,
+        targetDeviceId,
+        targetDeviceType: targetDevice?.deviceType || 'mobile',
+        targetDeviceIp: targetDevice?.ip || '',
+        senderName: senderName || 'Laptop',
+        transferType: 'text',
+        textContent: textContent || '',
+        fileName: 'Text Message',
+        fileSize: Buffer.byteLength(textContent || '', 'utf8'),
+        serverUrl: `http://${primaryIp}:${PORT}`,
+        downloadUrl: `http://${primaryIp}:${PORT}/api/transfer/pull/${transferId}`
+      });
+    }
     return res.json({ success: true, transferId, message: 'Text staged for mobile' });
   }
 
@@ -1084,6 +1091,7 @@ app.post('/api/transfer/push', upload.single('file'), (req, res) => {
     createdAt: Date.now()
   };
 
+  // Broadcast to mobile NOW that the file is 100% staged and ready on disk
   broadcastWs('incoming-file-push', {
     transferId,
     targetDeviceId,
@@ -1102,6 +1110,20 @@ app.post('/api/transfer/push', upload.single('file'), (req, res) => {
     fileName: finalFileName,
     fileSize: finalFileSize
   });
+});
+
+// Cancel a transfer and cleanup staged file
+app.post('/api/transfer/cancel/:id', (req, res) => {
+  const { id } = req.params;
+  const push = pendingPushes[id];
+  if (push) {
+    if (push.filePath && push.filePath.includes('uploads') && fs.existsSync(push.filePath)) {
+      try { fs.unlinkSync(push.filePath); } catch (e) {}
+    }
+    delete pendingPushes[id];
+  }
+  broadcastWs('transfer-cancelled', { transferId: id });
+  res.json({ success: true });
 });
 
 // Mobile Pulls/Streams the pushed file from Laptop Server

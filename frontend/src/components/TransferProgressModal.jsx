@@ -34,29 +34,7 @@ export default function TransferProgressModal({ targetDevice, item, onClose }) {
     const isMobileClient = /Android|iPhone|iPad/i.test(navigator.userAgent);
     const isSendingFromLaptop = !isMobileClient;
 
-    let preTransferId = null;
-    if (isSendingFromLaptop) {
-      try {
-        const initRes = await fetch(`${getServerUrl()}/api/transfer/init-push`, {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({
-            targetDeviceId: targetDevice.deviceId || '',
-            senderName: localStorage.getItem('titan_device_name') || 'Laptop',
-            fileName: item.name || 'File',
-            fileSize: item.size || (item.file ? item.file.size : 0),
-            transferType: item.type === 'text' ? 'text' : 'file',
-            textContent: item.text || ''
-          })
-        });
-        if (initRes.ok) {
-          const initData = await initRes.json();
-          preTransferId = initData.transferId;
-        }
-      } catch (e) {}
-    }
-
-    const currentTransferId = preTransferId || `tr_${Date.now()}`;
+    const currentTransferId = `tr_${Date.now()}_${Math.random().toString(36).substring(2, 7)}`;
 
     // Register active transfer in global ongoing history
     window.dispatchEvent(new CustomEvent('titan-active-transfer', {
@@ -75,9 +53,7 @@ export default function TransferProgressModal({ targetDevice, item, onClose }) {
     const formData = new FormData();
     formData.append('senderId', localStorage.getItem('titan_device_id') || 'dev');
     formData.append('senderName', localStorage.getItem('titan_device_name') || 'Device');
-    if (preTransferId) {
-      formData.append('transferId', preTransferId);
-    }
+    formData.append('transferId', currentTransferId);
 
     let targetEndpoint = '';
     if (isSendingFromLaptop) {
@@ -212,6 +188,10 @@ export default function TransferProgressModal({ targetDevice, item, onClose }) {
           setSpeed(currentSpeed);
         }
 
+        if (isSendingFromLaptop && item.type !== 'text') {
+          setStatusMessage(`Staging on Titan engine: ${uploadPct}% (${currentSpeed})`);
+        }
+
         window.dispatchEvent(new CustomEvent('titan-active-transfer-progress', {
           detail: { id: currentTransferId, progress: uploadPct, speed: currentSpeed, loaded: e.loaded }
         }));
@@ -224,9 +204,11 @@ export default function TransferProgressModal({ targetDevice, item, onClose }) {
         try { respData = JSON.parse(xhr.responseText); } catch (e) {}
 
         if (isSendingFromLaptop) {
-          const transferId = respData.transferId || preTransferId;
+          const transferId = respData.transferId || currentTransferId;
           setWaitingMobile(true);
-          setStatusMessage('Streaming to Mobile Device...');
+          setProgress(0);
+          setSpeed('0 MB/s');
+          setStatusMessage(item.type === 'text' ? 'Waiting for Mobile Device to receive note...' : 'Staged on Titan engine. Waiting for Mobile Device to receive...');
 
           // Listen for Mobile download progress
           const handlePeerProg = (e) => {
@@ -260,7 +242,7 @@ export default function TransferProgressModal({ targetDevice, item, onClose }) {
           };
           window.addEventListener('titan-transfer-completed', handleWsAck);
 
-          // Poll server transfer status every 1.5s as fallback
+          // Poll server transfer status every 1.2s as fallback
           pollTimerRef.current = setInterval(async () => {
             if (!transferId) return;
             try {
@@ -282,7 +264,7 @@ export default function TransferProgressModal({ targetDevice, item, onClose }) {
                 }
               }
             } catch (e) {}
-          }, 1500);
+          }, 1200);
 
           // Helpful status update after 12s if mobile hasn't grabbed it yet
           timeoutTimerRef.current = setTimeout(() => {
@@ -319,7 +301,7 @@ export default function TransferProgressModal({ targetDevice, item, onClose }) {
     startRealTransfer();
     return () => {
       cleanupTimers();
-      if (xhrRef.current) {
+      if (!waitingMobile && xhrRef.current) {
         try { xhrRef.current.abort(); } catch (e) {}
       }
       if (window.TitanNativeBridge && typeof window.TitanNativeBridge.cancelActiveUpload === 'function') {
@@ -336,6 +318,9 @@ export default function TransferProgressModal({ targetDevice, item, onClose }) {
     if (window.TitanNativeBridge && typeof window.TitanNativeBridge.cancelActiveUpload === 'function') {
       try { window.TitanNativeBridge.cancelActiveUpload(); } catch (e) {}
     }
+    try {
+      fetch(`${getServerUrl()}/api/transfer/cancel/${item.name}`, { method: 'POST' }).catch(() => {});
+    } catch (e) {}
     window.dispatchEvent(new CustomEvent('titan-active-transfer-cancel', {
       detail: { id: item.name }
     }));

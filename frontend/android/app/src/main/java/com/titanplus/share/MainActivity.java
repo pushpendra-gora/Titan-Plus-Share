@@ -292,6 +292,13 @@ public class MainActivity extends BridgeActivity {
                 if (mimeType == null) mimeType = "application/octet-stream";
 
                 if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q) {
+                    try {
+                        Uri queryUri = MediaStore.Downloads.EXTERNAL_CONTENT_URI;
+                        String selection = MediaStore.Downloads.DISPLAY_NAME + " = ? AND " + MediaStore.Downloads.RELATIVE_PATH + " LIKE ?";
+                        String[] selectionArgs = new String[]{ fileName, "%TitanPlusShare%" };
+                        getContentResolver().delete(queryUri, selection, selectionArgs);
+                    } catch (Exception ignored) {}
+
                     ContentValues values = new ContentValues();
                     values.put(MediaStore.Downloads.DISPLAY_NAME, fileName);
                     values.put(MediaStore.Downloads.MIME_TYPE, mimeType);
@@ -411,15 +418,53 @@ public class MainActivity extends BridgeActivity {
                             return;
                         }
 
-                        // Complete: Now safely copy/move to public Downloads/TitanPlusShare (NO CORRUPT FRAGMENTS)
-                        String extension = MimeTypeMap.getFileExtensionFromUrl(fileName);
+                        // STRICT INTEGRITY CHECK: Reject incomplete / truncated transfers
+                        if (fileLength > 0 && total < fileLength) {
+                            if (tempPartFile != null && tempPartFile.exists()) tempPartFile.delete();
+                            final long transferred = total;
+                            final long expected = fileLength;
+                            runOnUiThread(() -> {
+                                if (getBridge() != null && getBridge().getWebView() != null) {
+                                    getBridge().getWebView().evaluateJavascript(
+                                        "window.dispatchEvent(new CustomEvent('titan-native-download-error', { detail: { error: 'Transfer incomplete: received " + transferred + " of " + expected + " bytes' } }));",
+                                        null
+                                    );
+                                }
+                            });
+                            return;
+                        }
+
+                        if (total == 0) {
+                            if (tempPartFile != null && tempPartFile.exists()) tempPartFile.delete();
+                            runOnUiThread(() -> {
+                                if (getBridge() != null && getBridge().getWebView() != null) {
+                                    getBridge().getWebView().evaluateJavascript(
+                                        "window.dispatchEvent(new CustomEvent('titan-native-download-error', { detail: { error: 'Empty file received from server' } }));",
+                                        null
+                                    );
+                                }
+                            });
+                            return;
+                        }
+
+                        // Complete & Verified: Now safely copy/move to public Downloads/TitanPlusShare (NO CORRUPT FRAGMENTS)
+                        String safeFileName = new File(fileName).getName().replaceAll("[\\\\/:*?\"<>|]", "_");
+                        String extension = MimeTypeMap.getFileExtensionFromUrl(safeFileName);
                         String mimeType = extension != null ? MimeTypeMap.getSingleton().getMimeTypeFromExtension(extension.toLowerCase()) : "application/octet-stream";
                         if (mimeType == null) mimeType = "application/octet-stream";
 
                         boolean savedSuccess = false;
                         if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q) {
+                            // First clean up any existing duplicate file with the exact same name in TitanPlusShare
+                            try {
+                                Uri queryUri = MediaStore.Downloads.EXTERNAL_CONTENT_URI;
+                                String selection = MediaStore.Downloads.DISPLAY_NAME + " = ? AND " + MediaStore.Downloads.RELATIVE_PATH + " LIKE ?";
+                                String[] selectionArgs = new String[]{ safeFileName, "%TitanPlusShare%" };
+                                getContentResolver().delete(queryUri, selection, selectionArgs);
+                            } catch (Exception ignored) {}
+
                             ContentValues values = new ContentValues();
-                            values.put(MediaStore.Downloads.DISPLAY_NAME, fileName);
+                            values.put(MediaStore.Downloads.DISPLAY_NAME, safeFileName);
                             values.put(MediaStore.Downloads.MIME_TYPE, mimeType);
                             values.put(MediaStore.Downloads.RELATIVE_PATH, Environment.DIRECTORY_DOWNLOADS + "/TitanPlusShare");
                             Uri uri = getContentResolver().insert(MediaStore.Downloads.EXTERNAL_CONTENT_URI, values);
@@ -441,7 +486,7 @@ public class MainActivity extends BridgeActivity {
                             File downloadDir = Environment.getExternalStoragePublicDirectory(Environment.DIRECTORY_DOWNLOADS);
                             File targetDir = new File(downloadDir, "TitanPlusShare");
                             if (!targetDir.exists()) targetDir.mkdirs();
-                            File targetFile = new File(targetDir, fileName);
+                            File targetFile = new File(targetDir, safeFileName);
                             if (targetFile.exists()) targetFile.delete();
                             tempPartFile.renameTo(targetFile);
                             MediaScannerConnection.scanFile(MainActivity.this, new String[]{targetFile.getAbsolutePath()}, null, null);
@@ -453,11 +498,11 @@ public class MainActivity extends BridgeActivity {
                             tempPartFile.delete();
                         }
 
-                        showNotification("Download Complete!", fileName + " saved to Downloads/TitanPlusShare");
+                        showNotification("Download Complete!", safeFileName + " saved to Downloads/TitanPlusShare");
                         runOnUiThread(() -> {
                             if (getBridge() != null && getBridge().getWebView() != null) {
                                 getBridge().getWebView().evaluateJavascript(
-                                    "window.dispatchEvent(new CustomEvent('titan-native-download-complete', { detail: { fileName: '" + fileName.replace("'", "\\'") + "' } }));",
+                                    "window.dispatchEvent(new CustomEvent('titan-native-download-complete', { detail: { fileName: '" + safeFileName.replace("'", "\\'") + "' } }));",
                                     null
                                 );
                             }
