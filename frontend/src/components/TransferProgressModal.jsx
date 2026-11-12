@@ -1,6 +1,7 @@
 import React, { useState, useEffect, useRef } from 'react';
 import { X, CheckCircle2, ArrowUpRight, Laptop, Smartphone, AlertCircle, RefreshCw } from 'lucide-react';
-import { formatBytes, getServerUrl } from '../api';
+import { formatBytes, getServerUrl, getDeviceId, getDeviceName } from '../api';
+import { Capacitor } from '@capacitor/core';
 import confetti from 'canvas-confetti';
 import JSZip from 'jszip';
 
@@ -93,6 +94,48 @@ export default function TransferProgressModal({ targetDevice, item, onClose }) {
       targetEndpoint = `${targetHost}/api/transfer/send`;
     }
 
+    // Native Android direct stream upload for large shared files
+    if (!isSendingFromLaptop && item.cachePath && item.type !== 'text' && window.TitanNativeBridge && typeof window.TitanNativeBridge.uploadDirect === 'function') {
+      setStatusMessage('Streaming file directly to Laptop...');
+      const handleNativeUploadProg = (e) => {
+        if (e.detail?.percent !== undefined) {
+          setProgress(e.detail.percent);
+          if (e.detail.speed) setSpeed(e.detail.speed);
+          if (e.detail.loaded) setTransferredBytes(e.detail.loaded);
+          window.dispatchEvent(new CustomEvent('titan-active-transfer-progress', {
+            detail: { id: currentTransferId, progress: e.detail.percent, speed: e.detail.speed, loaded: e.detail.loaded }
+          }));
+        }
+      };
+
+      const handleNativeUploadDone = () => {
+        setProgress(100);
+        setIsDone(true);
+        setStatusMessage('Transferred to Laptop successfully!');
+        confetti({ particleCount: 60, spread: 60, origin: { y: 0.6 } });
+        window.dispatchEvent(new CustomEvent('titan-active-transfer-complete', {
+          detail: { id: currentTransferId }
+        }));
+        window.removeEventListener('titan-native-upload-progress', handleNativeUploadProg);
+        window.removeEventListener('titan-native-upload-complete', handleNativeUploadDone);
+        window.removeEventListener('titan-native-upload-error', handleNativeUploadErr);
+      };
+
+      const handleNativeUploadErr = (e) => {
+        setError(e.detail?.error || 'Upload error');
+        window.removeEventListener('titan-native-upload-progress', handleNativeUploadProg);
+        window.removeEventListener('titan-native-upload-complete', handleNativeUploadDone);
+        window.removeEventListener('titan-native-upload-error', handleNativeUploadErr);
+      };
+
+      window.addEventListener('titan-native-upload-progress', handleNativeUploadProg);
+      window.addEventListener('titan-native-upload-complete', handleNativeUploadDone);
+      window.addEventListener('titan-native-upload-error', handleNativeUploadErr);
+
+      window.TitanNativeBridge.uploadDirect(item.cachePath, targetEndpoint, item.name, getDeviceId(), getDeviceName());
+      return;
+    }
+
     if (item.type === 'text') {
       formData.append('transferType', 'text');
       formData.append('textContent', item.text || '');
@@ -133,9 +176,20 @@ export default function TransferProgressModal({ targetDevice, item, onClose }) {
       // Local path available on laptop
       formData.append('filePath', item.path);
       formData.append('originalName', item.name);
+    } else if (item.cachePath) {
+      try {
+        const fileSrc = Capacitor.convertFileSrc(item.cachePath);
+        const res = await fetch(fileSrc);
+        const blob = await res.blob();
+        formData.append('file', blob, item.name);
+        formData.append('originalName', item.name);
+      } catch (err) {
+        setError('Cannot read shared file: ' + err.message);
+        return;
+      }
     } else {
-      const blob = new Blob([item.name || ''], { type: 'text/plain' });
-      formData.append('file', blob, item.name || 'file.dat');
+      setError('No valid file available for transfer');
+      return;
     }
 
     const startTime = Date.now();
@@ -268,6 +322,9 @@ export default function TransferProgressModal({ targetDevice, item, onClose }) {
       if (xhrRef.current) {
         try { xhrRef.current.abort(); } catch (e) {}
       }
+      if (window.TitanNativeBridge && typeof window.TitanNativeBridge.cancelActiveUpload === 'function') {
+        try { window.TitanNativeBridge.cancelActiveUpload(); } catch (e) {}
+      }
     };
   }, [item, targetDevice]);
 
@@ -275,6 +332,9 @@ export default function TransferProgressModal({ targetDevice, item, onClose }) {
     cleanupTimers();
     if (xhrRef.current) {
       try { xhrRef.current.abort(); } catch (e) {}
+    }
+    if (window.TitanNativeBridge && typeof window.TitanNativeBridge.cancelActiveUpload === 'function') {
+      try { window.TitanNativeBridge.cancelActiveUpload(); } catch (e) {}
     }
     window.dispatchEvent(new CustomEvent('titan-active-transfer-cancel', {
       detail: { id: item.name }

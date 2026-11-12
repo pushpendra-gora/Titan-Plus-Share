@@ -1,6 +1,7 @@
 import React, { useState, useEffect, useRef } from 'react';
 import { X, Wifi, Link as LinkIcon, Laptop, Smartphone, CheckCircle, Copy, QrCode, ArrowRight, Clock, Plus, Camera, RefreshCw, Image, ArrowDownCircle, CheckCircle2 } from 'lucide-react';
 import { formatBytes, generateShareLink, generateFolderShareLink, getPairedDevices, getServerUrl, setServerUrl, getPairingInfo, getDeviceId, getDeviceName, authenticateDevice } from '../api';
+import { Capacitor } from '@capacitor/core';
 import { Html5Qrcode } from 'html5-qrcode';
 import confetti from 'canvas-confetti';
 
@@ -226,7 +227,17 @@ export default function SendModal({ item, onClose, onStartTransfer }) {
       } else if (item.type === 'text') {
         res = await generateShareLink(null, 'text', item.text);
       } else {
-        res = await generateShareLink(item.file, item.type);
+        let fileToSend = item.file;
+        if (!fileToSend && item.cachePath) {
+          try {
+            const resBlob = await fetch(Capacitor.convertFileSrc(item.cachePath));
+            const blob = await resBlob.blob();
+            fileToSend = new File([blob], item.name, { type: blob.type || 'application/octet-stream' });
+          } catch (e) {
+            console.warn('Could not read cached file for link:', e);
+          }
+        }
+        res = await generateShareLink(fileToSend, item.type);
       }
       setLinkData(res);
       setLiveDownload({ status: 'waiting', percent: 0 });
@@ -238,6 +249,8 @@ export default function SendModal({ item, onClose, onStartTransfer }) {
           token: res.token,
           fileName: res.fileName,
           fileSize: res.fileSize,
+          type: item.type === 'text' ? 'text' : 'file',
+          textContent: item.type === 'text' ? item.text : null,
           url: res.url,
           qrCode: res.qrCode,
           createdAt: Date.now(),

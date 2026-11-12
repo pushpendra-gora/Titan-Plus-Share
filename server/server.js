@@ -487,6 +487,7 @@ app.get('/api/links/info/:token', (req, res) => {
     type: link.type,
     fileName: link.fileName,
     fileSize: link.fileSize,
+    textContent: link.textContent || null,
     creatorDeviceId: link.creatorDeviceId || '',
     isExpired,
     remainingSeconds,
@@ -749,13 +750,33 @@ app.get('/d/:token', (req, res) => {
       <div class="card">
         <img src="/logo.png" alt="Titan Plus Share" style="width:52px;height:52px;border-radius:14px;margin:0 auto 12px;display:block;box-shadow:0 4px 16px rgba(37,99,235,0.25);object-fit:cover;" />
         <div class="badge">Titan Plus Share</div>
-        <div class="file-icon">📥</div>
-        <div class="filename">${link.fileName}</div>
-        <div class="filesize">${fileSizeMb > 0 ? fileSizeMb + ' MB' : link.fileSize + ' B'}</div>
-        <a class="btn-download" href="/api/links/download/${link.id}">Download File</a>
+        <div class="file-icon">${link.type === 'text' ? '📝' : '📥'}</div>
+        <div class="filename">${link.type === 'text' ? 'Shared Text Note' : link.fileName}</div>
+        <div class="filesize">${link.type === 'text' ? (link.textContent || '').length + ' characters' : (fileSizeMb > 0 ? fileSizeMb + ' MB' : link.fileSize + ' B')}</div>
+        ${link.type === 'text' ? `
+          <div style="background:#f1f5f9;border:1px solid #e2e8f0;border-radius:14px;padding:14px;font-family:monospace;font-size:13px;text-align:left;white-space:pre-wrap;max-height:180px;overflow-y:auto;margin-bottom:16px;user-select:text;" id="txtContent">${(link.textContent || '').replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;')}</div>
+          <button class="btn-download" id="copyBtn" onclick="copyTextNote()" style="border:none;cursor:pointer;margin-bottom:10px;">Copy Text</button>
+          <a href="/api/links/download/${link.id}" style="color:#64748b;font-size:12px;text-decoration:none;">Download as .txt file</a>
+        ` : `
+          <a class="btn-download" href="/api/links/download/${link.id}">Download File</a>
+        `}
         <div class="timer" id="countdown">Valid for 3 hours</div>
       </div>
       <script>
+        function copyTextNote() {
+          const el = document.getElementById('txtContent');
+          if (!el) return;
+          navigator.clipboard.writeText(el.innerText).then(() => {
+            const btn = document.getElementById('copyBtn');
+            btn.innerText = 'Copied to Clipboard! ✓';
+            btn.style.background = '#10b981';
+            fetch('/api/links/download/${link.id}').catch(() => {});
+            setTimeout(() => {
+              btn.innerText = 'Copy Text';
+              btn.style.background = '#2563eb';
+            }, 3000);
+          });
+        }
         let remaining = ${remainingSeconds};
         function update() {
           if (remaining <= 0) {

@@ -31,6 +31,7 @@ import com.getcapacitor.BridgeActivity;
 import android.content.ContentValues;
 import android.provider.MediaStore;
 import android.webkit.MimeTypeMap;
+import android.webkit.ValueCallback;
 import java.io.OutputStream;
 import java.net.HttpURLConnection;
 import java.net.URL;
@@ -39,12 +40,18 @@ import java.io.File;
 import java.io.FileInputStream;
 import java.io.FileOutputStream;
 import java.io.InputStream;
+import java.io.DataOutputStream;
 
 public class MainActivity extends BridgeActivity {
 
     private static final int PERMISSION_REQ_CODE = 200;
+    private static final int FILE_CHOOSER_REQ_CODE = 3001;
+    private static final int NATIVE_PICK_FILE_REQ = 3002;
+    private static final int NATIVE_PICK_MEDIA_REQ = 3003;
+    private static final int NATIVE_PICK_FOLDER_REQ = 3004;
     private static final String CHANNEL_ID = "titan_plus_share_channel";
     private static String pendingShareJson = null;
+    private ValueCallback<Uri[]> filePathCallback;
 
     @Override
     public void onCreate(Bundle savedInstanceState) {
@@ -79,6 +86,28 @@ public class MainActivity extends BridgeActivity {
                         }
                         request.grant(request.getResources());
                     });
+                }
+
+                @Override
+                public boolean onShowFileChooser(WebView webView, ValueCallback<Uri[]> filePathCallback, FileChooserParams fileChooserParams) {
+                    if (MainActivity.this.filePathCallback != null) {
+                        MainActivity.this.filePathCallback.onReceiveValue(null);
+                        MainActivity.this.filePathCallback = null;
+                    }
+                    MainActivity.this.filePathCallback = filePathCallback;
+
+                    try {
+                        Intent intent = fileChooserParams.createIntent();
+                        intent.putExtra(Intent.EXTRA_ALLOW_MULTIPLE, true);
+                        startActivityForResult(intent, FILE_CHOOSER_REQ_CODE);
+                    } catch (Exception e) {
+                        Intent fallback = new Intent(Intent.ACTION_GET_CONTENT);
+                        fallback.addCategory(Intent.CATEGORY_OPENABLE);
+                        fallback.setType("*/*");
+                        fallback.putExtra(Intent.EXTRA_ALLOW_MULTIPLE, true);
+                        startActivityForResult(Intent.createChooser(fallback, "Select File"), FILE_CHOOSER_REQ_CODE);
+                    }
+                    return true;
                 }
 
                 @Override
@@ -130,6 +159,41 @@ public class MainActivity extends BridgeActivity {
         });
 
         handleSendIntent(getIntent());
+    }
+
+    @Override
+    protected void onActivityResult(int requestCode, int resultCode, Intent data) {
+        super.onActivityResult(requestCode, resultCode, data);
+
+        if (requestCode == FILE_CHOOSER_REQ_CODE) {
+            if (filePathCallback != null) {
+                Uri[] results = null;
+                if (resultCode == RESULT_OK && data != null) {
+                    if (data.getClipData() != null) {
+                        int count = data.getClipData().getItemCount();
+                        results = new Uri[count];
+                        for (int i = 0; i < count; i++) {
+                            results[i] = data.getClipData().getItemAt(i).getUri();
+                        }
+                    } else if (data.getData() != null) {
+                        results = new Uri[]{ data.getData() };
+                    }
+                }
+                filePathCallback.onReceiveValue(results);
+                filePathCallback = null;
+            }
+        } else if (requestCode == NATIVE_PICK_FILE_REQ || requestCode == NATIVE_PICK_MEDIA_REQ) {
+            if (resultCode == RESULT_OK && data != null) {
+                if (data.getClipData() != null) {
+                    int count = data.getClipData().getItemCount();
+                    for (int i = 0; i < count; i++) {
+                        processIncomingFileUri(data.getClipData().getItemAt(i).getUri());
+                    }
+                } else if (data.getData() != null) {
+                    processIncomingFileUri(data.getData());
+                }
+            }
+        }
     }
 
     private void createNotificationChannel() {
@@ -427,6 +491,175 @@ public class MainActivity extends BridgeActivity {
             } catch (Exception e) {
                 e.printStackTrace();
             }
+        }
+
+        private volatile boolean isUploadCancelled = false;
+
+        @JavascriptInterface
+        public void cancelActiveUpload() {
+            isUploadCancelled = true;
+        }
+
+        @JavascriptInterface
+        public void uploadDirect(final String filePath, final String targetUrl, final String originalName, final String senderId, final String senderName) {
+            isUploadCancelled = false;
+            new Thread(() -> {
+                HttpURLConnection conn = null;
+                FileInputStream fis = null;
+                OutputStream os = null;
+                try {
+                    File file = new File(filePath);
+                    if (!file.exists() || !file.canRead()) {
+                        dispatchUploadError("Cannot read file: " + filePath);
+                        return;
+                    }
+                    long fileLength = file.length();
+                    String boundary = "TitanBoundary" + System.currentTimeMillis();
+                    String lineEnd = "\r\n";
+                    String twoHyphens = "--";
+
+                    URL url = new URL(targetUrl);
+                    conn = (HttpURLConnection) url.openConnection();
+                    conn.setConnectTimeout(15000);
+                    conn.setReadTimeout(300000);
+                    conn.setDoInput(true);
+                    conn.setDoOutput(true);
+                    conn.setUseCaches(false);
+                    conn.setRequestMethod("POST");
+                    conn.setRequestProperty("Connection", "Keep-Alive");
+                    conn.setRequestProperty("Content-Type", "multipart/form-data; boundary=" + boundary);
+                    conn.setChunkedStreamingMode(131072);
+
+                    os = conn.getOutputStream();
+                    DataOutputStream dos = new DataOutputStream(os);
+
+                    if (senderId != null) {
+                        dos.writeBytes(twoHyphens + boundary + lineEnd);
+                        dos.writeBytes("Content-Disposition: form-data; name=\"senderId\"" + lineEnd + lineEnd);
+                        dos.write(senderId.getBytes("UTF-8"));
+                        dos.writeBytes(lineEnd);
+                    }
+                    if (senderName != null) {
+                        dos.writeBytes(twoHyphens + boundary + lineEnd);
+                        dos.writeBytes("Content-Disposition: form-data; name=\"senderName\"" + lineEnd + lineEnd);
+                        dos.write(senderName.getBytes("UTF-8"));
+                        dos.writeBytes(lineEnd);
+                    }
+                    dos.writeBytes(twoHyphens + boundary + lineEnd);
+                    dos.writeBytes("Content-Disposition: form-data; name=\"originalName\"" + lineEnd + lineEnd);
+                    dos.write(originalName.getBytes("UTF-8"));
+                    dos.writeBytes(lineEnd);
+
+                    dos.writeBytes(twoHyphens + boundary + lineEnd);
+                    dos.writeBytes("Content-Disposition: form-data; name=\"file\"; filename=\"" + originalName + "\"" + lineEnd);
+                    dos.writeBytes("Content-Type: application/octet-stream" + lineEnd + lineEnd);
+                    dos.flush();
+
+                    fis = new FileInputStream(file);
+                    byte[] buffer = new byte[131072];
+                    long total = 0;
+                    int count;
+                    long lastReport = 0;
+                    long startTime = System.currentTimeMillis();
+
+                    while (!isUploadCancelled && (count = fis.read(buffer)) != -1) {
+                        dos.write(buffer, 0, count);
+                        total += count;
+
+                        long now = System.currentTimeMillis();
+                        if (now - lastReport > 250) {
+                            lastReport = now;
+                            final int pct = fileLength > 0 ? (int) Math.min(99, (total * 100L) / fileLength) : 0;
+                            final long currentLoaded = total;
+                            final double elapsedSec = Math.max(0.1, (now - startTime) / 1000.0);
+                            final double mbps = (currentLoaded / (1024.0 * 1024.0)) / elapsedSec;
+                            final String speedStr = String.format(java.util.Locale.US, "%.1f MB/s", mbps);
+
+                            runOnUiThread(() -> {
+                                if (getBridge() != null && getBridge().getWebView() != null) {
+                                    getBridge().getWebView().evaluateJavascript(
+                                        "window.dispatchEvent(new CustomEvent('titan-native-upload-progress', { detail: { percent: " + pct + ", loaded: " + currentLoaded + ", total: " + fileLength + ", speed: '" + speedStr + "' } }));",
+                                        null
+                                    );
+                                }
+                            });
+                        }
+                    }
+
+                    dos.writeBytes(lineEnd);
+                    dos.writeBytes(twoHyphens + boundary + twoHyphens + lineEnd);
+                    dos.flush();
+
+                    if (isUploadCancelled) {
+                        return;
+                    }
+
+                    int respCode = conn.getResponseCode();
+                    if (respCode >= 200 && respCode < 300) {
+                        showNotification("Sent successfully!", originalName + " sent to Laptop");
+                        runOnUiThread(() -> {
+                            if (getBridge() != null && getBridge().getWebView() != null) {
+                                getBridge().getWebView().evaluateJavascript(
+                                    "window.dispatchEvent(new CustomEvent('titan-native-upload-complete', { detail: { fileName: '" + originalName.replace("'", "\\'") + "' } }));",
+                                    null
+                                );
+                            }
+                        });
+                    } else {
+                        dispatchUploadError("Server returned HTTP " + respCode);
+                    }
+                } catch (Exception e) {
+                    dispatchUploadError(e.getMessage() != null ? e.getMessage() : "Upload error");
+                } finally {
+                    try { if (fis != null) fis.close(); } catch (Exception ignored) {}
+                    try { if (os != null) os.close(); } catch (Exception ignored) {}
+                    if (conn != null) conn.disconnect();
+                }
+            }).start();
+        }
+
+        private void dispatchUploadError(final String errMsg) {
+            runOnUiThread(() -> {
+                if (getBridge() != null && getBridge().getWebView() != null) {
+                    getBridge().getWebView().evaluateJavascript(
+                        "window.dispatchEvent(new CustomEvent('titan-native-upload-error', { detail: { error: '" + errMsg.replace("'", "\\'") + "' } }));",
+                        null
+                    );
+                }
+            });
+        }
+
+        @JavascriptInterface
+        public void openNativeFilePicker() {
+            runOnUiThread(() -> {
+                Intent intent = new Intent(Intent.ACTION_GET_CONTENT);
+                intent.addCategory(Intent.CATEGORY_OPENABLE);
+                intent.setType("*/*");
+                intent.putExtra(Intent.EXTRA_ALLOW_MULTIPLE, true);
+                startActivityForResult(Intent.createChooser(intent, "Choose Files to Share"), NATIVE_PICK_FILE_REQ);
+            });
+        }
+
+        @JavascriptInterface
+        public void openNativeMediaPicker() {
+            runOnUiThread(() -> {
+                Intent intent = new Intent(Intent.ACTION_PICK, MediaStore.Images.Media.EXTERNAL_CONTENT_URI);
+                intent.setType("image/*,video/*");
+                intent.putExtra(Intent.EXTRA_MIME_TYPES, new String[]{"image/*", "video/*"});
+                intent.putExtra(Intent.EXTRA_ALLOW_MULTIPLE, true);
+                startActivityForResult(Intent.createChooser(intent, "Choose Photos or Videos"), NATIVE_PICK_MEDIA_REQ);
+            });
+        }
+
+        @JavascriptInterface
+        public void openNativeFolderPicker() {
+            runOnUiThread(() -> {
+                Intent intent = new Intent(Intent.ACTION_GET_CONTENT);
+                intent.addCategory(Intent.CATEGORY_OPENABLE);
+                intent.setType("*/*");
+                intent.putExtra(Intent.EXTRA_ALLOW_MULTIPLE, true);
+                startActivityForResult(Intent.createChooser(intent, "Select Files to Share"), NATIVE_PICK_FILE_REQ);
+            });
         }
 
         @JavascriptInterface

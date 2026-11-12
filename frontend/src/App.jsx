@@ -26,6 +26,7 @@ import LinksView from './components/LinksView';
 import SettingsView from './components/SettingsView';
 import IncomingTransferModal from './components/IncomingTransferModal';
 import { getServerUrl, setServerUrl, getDeviceId, getDeviceName, formatBytes } from './api';
+import { Capacitor } from '@capacitor/core';
 
 export default function App() {
   const [activeTab, setActiveTab] = useState('home'); // 'home' | 'links' | 'settings'
@@ -202,7 +203,7 @@ export default function App() {
 
   // Listen for Android System Share events (when shared from other apps on mobile)
   useEffect(() => {
-    const checkNativeShare = () => {
+    const checkNativeShare = async () => {
       if (window.TitanNativeBridge && typeof window.TitanNativeBridge.getPendingSharedItem === 'function') {
         try {
           const raw = window.TitanNativeBridge.getPendingSharedItem();
@@ -217,25 +218,22 @@ export default function App() {
               });
             } else if (item.type === 'file') {
               let fileObj = null;
-              if (item.cachePath && window.TitanNativeBridge.readCachedFileBase64) {
+              if (item.cachePath) {
                 try {
-                  const b64 = window.TitanNativeBridge.readCachedFileBase64(item.cachePath);
-                  if (b64) {
-                    const byteChars = atob(b64);
-                    const byteNums = new Array(byteChars.length);
-                    for (let i = 0; i < byteChars.length; i++) {
-                      byteNums[i] = byteChars.charCodeAt(i);
-                    }
-                    const byteArray = new Uint8Array(byteNums);
-                    fileObj = new File([byteArray], item.name, { type: 'application/octet-stream' });
-                  }
-                } catch (e) {}
+                  const fileSrc = Capacitor.convertFileSrc(item.cachePath);
+                  const res = await fetch(fileSrc);
+                  const blob = await res.blob();
+                  fileObj = new File([blob], item.name, { type: blob.type || 'application/octet-stream' });
+                } catch (e) {
+                  console.warn('Capacitor convertFileSrc error:', e);
+                }
               }
               setSelectedItem({
                 type: 'file',
                 name: item.name || 'Shared File',
                 size: item.size || fileObj?.size || 0,
                 file: fileObj,
+                cachePath: item.cachePath,
                 uri: item.cachePath
               });
             }
@@ -248,7 +246,7 @@ export default function App() {
     const sharePoll = setInterval(checkNativeShare, 1200);
     window.addEventListener('focus', checkNativeShare);
 
-    const handleIncomingShare = (e) => {
+    const handleIncomingShare = async (e) => {
       if (e.detail) {
         const { type, payload, name, size } = e.detail;
         if (type === 'text') {
@@ -259,10 +257,23 @@ export default function App() {
             text: payload
           });
         } else {
+          let fileObj = null;
+          if (payload) {
+            try {
+              const fileSrc = Capacitor.convertFileSrc(payload);
+              const res = await fetch(fileSrc);
+              const blob = await res.blob();
+              fileObj = new File([blob], name || 'Shared_File', { type: blob.type || 'application/octet-stream' });
+            } catch (err) {
+              console.warn('Capacitor convertFileSrc error:', err);
+            }
+          }
           setSelectedItem({
             type: 'file',
             name: name || 'Shared File',
-            size: size || 1024 * 1024,
+            size: size || fileObj?.size || 1024 * 1024,
+            file: fileObj,
+            cachePath: payload,
             uri: payload
           });
         }
@@ -464,6 +475,39 @@ export default function App() {
     e.target.value = '';
   };
 
+  const handleOpenFilePicker = () => {
+    if (window.TitanNativeBridge && typeof window.TitanNativeBridge.openNativeFilePicker === 'function') {
+      window.TitanNativeBridge.openNativeFilePicker();
+    } else {
+      fileInputRef.current?.click();
+    }
+  };
+
+  const handleOpenMediaPicker = (type) => {
+    setShowMediaModal(false);
+    if (type === 'photo') {
+      if (window.TitanNativeBridge && typeof window.TitanNativeBridge.openNativeMediaPicker === 'function') {
+        window.TitanNativeBridge.openNativeMediaPicker();
+      } else {
+        mediaPhotoInputRef.current?.click();
+      }
+    } else if (type === 'video') {
+      if (window.TitanNativeBridge && typeof window.TitanNativeBridge.openNativeMediaPicker === 'function') {
+        window.TitanNativeBridge.openNativeMediaPicker();
+      } else {
+        mediaVideoInputRef.current?.click();
+      }
+    }
+  };
+
+  const handleOpenFolderPicker = () => {
+    if (window.TitanNativeBridge && typeof window.TitanNativeBridge.openNativeFolderPicker === 'function') {
+      window.TitanNativeBridge.openNativeFolderPicker();
+    } else {
+      folderInputRef.current?.click();
+    }
+  };
+
   const handleSendText = (text) => {
     setShowTextModal(false);
     setSelectedItem({
@@ -650,7 +694,7 @@ export default function App() {
                     
                     {/* File Card */}
                     <button
-                      onClick={() => fileInputRef.current?.click()}
+                      onClick={handleOpenFilePicker}
                       className="group bg-white hover:bg-slate-50/50 p-7 rounded-[24px] border border-slate-100 shadow-card hover:shadow-card-hover flex flex-col items-center justify-center gap-4 transition-all duration-300 hover:-translate-y-1"
                     >
                       <div className="w-14 h-14 rounded-2xl bg-blue-50 text-blue-600 group-hover:scale-110 flex items-center justify-center transition duration-300 border border-blue-100">
@@ -683,7 +727,7 @@ export default function App() {
 
                     {/* Folder Card */}
                     <button
-                      onClick={() => folderInputRef.current?.click()}
+                      onClick={handleOpenFolderPicker}
                       className="group bg-white hover:bg-slate-50/50 p-7 rounded-[24px] border border-slate-100 shadow-card hover:shadow-card-hover flex flex-col items-center justify-center gap-4 transition-all duration-300 hover:-translate-y-1"
                     >
                       <div className="w-14 h-14 rounded-2xl bg-blue-50 text-blue-600 group-hover:scale-110 flex items-center justify-center transition duration-300 border border-blue-100">
@@ -737,7 +781,7 @@ export default function App() {
                   
                   {/* Card 1: File */}
                   <button
-                    onClick={() => fileInputRef.current?.click()}
+                    onClick={handleOpenFilePicker}
                     className="aspect-square bg-white hover:bg-slate-50/60 p-4 sm:p-6 rounded-[22px] border border-slate-100 shadow-card flex flex-col items-center justify-center gap-2.5 sm:gap-3.5 transition-all active:scale-95"
                   >
                     <div className="w-11 h-11 sm:w-12 sm:h-12 rounded-2xl bg-blue-50 text-blue-600 flex items-center justify-center border border-blue-100">
@@ -770,7 +814,7 @@ export default function App() {
 
                   {/* Card 4: Folder */}
                   <button
-                    onClick={() => folderInputRef.current?.click()}
+                    onClick={handleOpenFolderPicker}
                     className="aspect-square bg-white hover:bg-slate-50/60 p-4 sm:p-6 rounded-[22px] border border-slate-100 shadow-card flex flex-col items-center justify-center gap-2.5 sm:gap-3.5 transition-all active:scale-95"
                   >
                     <div className="w-11 h-11 sm:w-12 sm:h-12 rounded-2xl bg-blue-50 text-blue-600 flex items-center justify-center border border-blue-100">
@@ -852,11 +896,7 @@ export default function App() {
       {showMediaModal && (
         <MediaModal
           onClose={() => setShowMediaModal(false)}
-          onSelectType={(type) => {
-            setShowMediaModal(false);
-            if (type === 'photo') mediaPhotoInputRef.current?.click();
-            if (type === 'video') mediaVideoInputRef.current?.click();
-          }}
+          onSelectType={handleOpenMediaPicker}
         />
       )}
 

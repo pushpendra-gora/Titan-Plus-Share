@@ -1,5 +1,5 @@
 import React, { useState, useEffect, useRef } from 'react';
-import { Link as LinkIcon, Download, CheckCircle, Clock, FileText, AlertCircle, RefreshCw, QrCode, Clipboard, Camera, X, Trash2, Copy, CheckCircle2, ArrowDownCircle, ExternalLink, Check } from 'lucide-react';
+import { Link as LinkIcon, Download, CheckCircle, Clock, FileText, AlertCircle, RefreshCw, QrCode, Clipboard, Camera, X, Trash2, Copy, CheckCircle2, ArrowDownCircle, ExternalLink, Check, AlignLeft } from 'lucide-react';
 import { getLinkInfo, formatBytes, getServerUrl, getLinksList, deleteLink, getDeviceId } from '../api';
 import { Html5Qrcode } from 'html5-qrcode';
 import confetti from 'canvas-confetti';
@@ -16,6 +16,7 @@ export default function LinksView() {
   const [myLinks, setMyLinks] = useState([]);
   const [copiedToken, setCopiedToken] = useState(null);
   const [viewQrLink, setViewQrLink] = useState(null);
+  const [textCopied, setTextCopied] = useState(false);
   const scannerDomId = useRef(`link-qr-reader-${Math.random().toString(36).substring(2, 7)}`);
 
   // Load ONLY links created by this current device (Sender only)
@@ -151,12 +152,30 @@ export default function LinksView() {
     setLoading(true);
     try {
       const info = await getLinkInfo(target);
+      if (info && info.type === 'text' && !info.textContent) {
+        const downloadUrl = info.directUrl || `${getServerUrl()}/api/links/download/${info.token}`;
+        try {
+          const txt = await fetch(downloadUrl).then(r => r.text());
+          info.textContent = txt;
+        } catch (e) {}
+      }
       setFileInfo(info);
     } catch (err) {
       setError(err.message || 'Link expired or not reachable. Ensure the host laptop is online.');
     } finally {
       setLoading(false);
     }
+  };
+
+  const handleCopyTextNote = (text, token) => {
+    if (!text) return;
+    navigator.clipboard.writeText(text);
+    setTextCopied(true);
+    confetti({ particleCount: 50, spread: 60, origin: { y: 0.6 } });
+    if (token) {
+      fetch(`${getServerUrl()}/api/links/download/${token}`).catch(() => {});
+    }
+    setTimeout(() => setTextCopied(false), 3000);
   };
 
   const handleValidate = () => validateLink(urlInput);
@@ -476,47 +495,104 @@ export default function LinksView() {
         )}
       </div>
 
-      {/* File Metadata Preview Card */}
+      {/* File / Text Metadata Preview Card */}
       {fileInfo && (
         <div className="bg-white rounded-[22px] p-4 sm:p-6 shadow-card border border-slate-100 animate-scaleIn mb-5">
-          <div className="flex items-center gap-3.5 mb-5 min-w-0">
-            <div className="w-12 h-12 rounded-xl bg-blue-50 text-blue-600 border border-blue-100 flex items-center justify-center font-bold text-sm shrink-0">
-              <FileText className="w-6 h-6" />
-            </div>
-            <div className="min-w-0 flex-1">
-              <h3 className="font-semibold text-slate-800 text-sm truncate">{fileInfo.fileName}</h3>
-              <p className="text-xs text-slate-500">{formatBytes(fileInfo.fileSize)}</p>
-            </div>
-          </div>
-
-          <div className="flex items-center justify-between p-3 bg-slate-50 rounded-xl border border-slate-100 mb-5 text-xs text-slate-500">
-            <div className="flex items-center gap-1.5 font-medium">
-              <Clock className="w-3.5 h-3.5 text-blue-600" />
-              <span>Link Expiry</span>
-            </div>
-            <span className="font-semibold text-slate-700">{formatRemaining(fileInfo.remainingSeconds)}</span>
-          </div>
-
-          {downloading && (
-            <div className="mb-4">
-              <div className="h-2 w-full bg-slate-100 rounded-full overflow-hidden">
-                <div 
-                  className="h-full bg-blue-600 transition-all duration-200"
-                  style={{ width: `${progress}%` }}
-                />
+          {fileInfo.type === 'text' ? (
+            <div>
+              <div className="flex items-center gap-3.5 mb-4 min-w-0">
+                <div className="w-12 h-12 rounded-xl bg-blue-50 text-blue-600 border border-blue-100 flex items-center justify-center font-bold text-sm shrink-0">
+                  <AlignLeft className="w-6 h-6" />
+                </div>
+                <div className="min-w-0 flex-1">
+                  <h3 className="font-semibold text-slate-800 text-sm truncate">Shared Text Note</h3>
+                  <p className="text-xs text-slate-500">{(fileInfo.textContent || '').length} characters</p>
+                </div>
               </div>
-              <p className="text-[11px] text-slate-400 text-center mt-1.5">Preparing download stream...</p>
+
+              {/* Text Note Preview Box */}
+              <div className="bg-slate-50 border border-slate-200/80 rounded-2xl p-4 text-xs font-mono text-slate-800 max-h-56 overflow-y-auto whitespace-pre-wrap select-text leading-relaxed mb-4">
+                {fileInfo.textContent || 'No text content'}
+              </div>
+
+              <div className="flex items-center justify-between p-3 bg-slate-50 rounded-xl border border-slate-100 mb-4 text-xs text-slate-500">
+                <div className="flex items-center gap-1.5 font-medium">
+                  <Clock className="w-3.5 h-3.5 text-blue-600" />
+                  <span>Link Expiry</span>
+                </div>
+                <span className="font-semibold text-slate-700">{formatRemaining(fileInfo.remainingSeconds)}</span>
+              </div>
+
+              {/* 1-Click Copy Button */}
+              <button
+                onClick={() => handleCopyTextNote(fileInfo.textContent, fileInfo.token)}
+                disabled={fileInfo.isExpired}
+                className="w-full py-3.5 bg-blue-600 hover:bg-blue-700 disabled:opacity-40 text-white font-semibold text-xs sm:text-sm rounded-xl transition flex items-center justify-center gap-2 shadow-lg shadow-blue-500/30 mb-2.5"
+              >
+                {textCopied ? (
+                  <>
+                    <CheckCircle2 className="w-4 h-4 text-emerald-300" />
+                    <span>Copied to Clipboard! ✓</span>
+                  </>
+                ) : (
+                  <>
+                    <Copy className="w-4 h-4" />
+                    <span>Copy Text</span>
+                  </>
+                )}
+              </button>
+
+              <div className="text-center">
+                <button
+                  onClick={handleStartDownload}
+                  className="text-[11px] text-slate-400 hover:text-blue-600 transition underline"
+                >
+                  Download as .txt file
+                </button>
+              </div>
+            </div>
+          ) : (
+            <div>
+              <div className="flex items-center gap-3.5 mb-5 min-w-0">
+                <div className="w-12 h-12 rounded-xl bg-blue-50 text-blue-600 border border-blue-100 flex items-center justify-center font-bold text-sm shrink-0">
+                  <FileText className="w-6 h-6" />
+                </div>
+                <div className="min-w-0 flex-1">
+                  <h3 className="font-semibold text-slate-800 text-sm truncate">{fileInfo.fileName}</h3>
+                  <p className="text-xs text-slate-500">{formatBytes(fileInfo.fileSize)}</p>
+                </div>
+              </div>
+
+              <div className="flex items-center justify-between p-3 bg-slate-50 rounded-xl border border-slate-100 mb-5 text-xs text-slate-500">
+                <div className="flex items-center gap-1.5 font-medium">
+                  <Clock className="w-3.5 h-3.5 text-blue-600" />
+                  <span>Link Expiry</span>
+                </div>
+                <span className="font-semibold text-slate-700">{formatRemaining(fileInfo.remainingSeconds)}</span>
+              </div>
+
+              {downloading && (
+                <div className="mb-4">
+                  <div className="h-2 w-full bg-slate-100 rounded-full overflow-hidden">
+                    <div 
+                      className="h-full bg-blue-600 transition-all duration-200"
+                      style={{ width: `${progress}%` }}
+                    />
+                  </div>
+                  <p className="text-[11px] text-slate-400 text-center mt-1.5">Preparing download stream...</p>
+                </div>
+              )}
+
+              <button
+                onClick={handleStartDownload}
+                disabled={downloading || fileInfo.isExpired}
+                className="w-full py-3.5 bg-blue-600 hover:bg-blue-700 disabled:opacity-40 text-white font-semibold text-xs sm:text-sm rounded-xl transition flex items-center justify-center gap-2 shadow-lg shadow-blue-500/30"
+              >
+                <Download className="w-4 h-4" />
+                <span>{downloading ? 'Downloading...' : 'Download File'}</span>
+              </button>
             </div>
           )}
-
-          <button
-            onClick={handleStartDownload}
-            disabled={downloading || fileInfo.isExpired}
-            className="w-full py-3.5 bg-blue-600 hover:bg-blue-700 disabled:opacity-40 text-white font-semibold text-xs sm:text-sm rounded-xl transition flex items-center justify-center gap-2 shadow-lg shadow-blue-500/30"
-          >
-            <Download className="w-4 h-4" />
-            <span>{downloading ? 'Downloading...' : 'Download File'}</span>
-          </button>
         </div>
       )}
 
@@ -546,10 +622,10 @@ export default function LinksView() {
                   <div className="flex items-start justify-between gap-3 mb-2">
                     <div className="flex items-center gap-3 min-w-0 flex-1">
                       <div className="w-10 h-10 rounded-xl bg-blue-50 text-blue-600 flex items-center justify-center shrink-0 border border-blue-100">
-                        <FileText className="w-5 h-5" />
+                        {link.type === 'text' ? <AlignLeft className="w-5 h-5" /> : <FileText className="w-5 h-5" />}
                       </div>
                       <div className="min-w-0 flex-1">
-                        <h4 className="text-xs font-semibold text-slate-800 truncate">{link.fileName}</h4>
+                        <h4 className="text-xs font-semibold text-slate-800 truncate">{link.type === 'text' ? 'Shared Text Note' : link.fileName}</h4>
                         <p className="text-[11px] text-slate-400 font-medium">
                           {formatBytes(link.fileSize)} • {link.remainingSeconds > 0 ? formatRemaining(link.remainingSeconds) : 'Expired'}
                         </p>
