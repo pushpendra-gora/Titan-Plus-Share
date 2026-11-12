@@ -33,9 +33,50 @@ export default function TransferProgressModal({ targetDevice, item, onClose }) {
     const isMobileClient = /Android|iPhone|iPad/i.test(navigator.userAgent);
     const isSendingFromLaptop = !isMobileClient;
 
+    let preTransferId = null;
+    if (isSendingFromLaptop) {
+      try {
+        const initRes = await fetch(`${getServerUrl()}/api/transfer/init-push`, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            targetDeviceId: targetDevice.deviceId || '',
+            senderName: localStorage.getItem('titan_device_name') || 'Laptop',
+            fileName: item.name || 'File',
+            fileSize: item.size || (item.file ? item.file.size : 0),
+            transferType: item.type === 'text' ? 'text' : 'file',
+            textContent: item.text || ''
+          })
+        });
+        if (initRes.ok) {
+          const initData = await initRes.json();
+          preTransferId = initData.transferId;
+        }
+      } catch (e) {}
+    }
+
+    const currentTransferId = preTransferId || `tr_${Date.now()}`;
+
+    // Register active transfer in global ongoing history
+    window.dispatchEvent(new CustomEvent('titan-active-transfer', {
+      detail: {
+        id: currentTransferId,
+        name: item.name,
+        size: item.size || (item.file ? item.file.size : 0),
+        target: targetDevice.deviceName,
+        type: isSendingFromLaptop ? 'sending' : 'receiving',
+        progress: 0,
+        speed: '0 MB/s',
+        status: 'active'
+      }
+    }));
+
     const formData = new FormData();
     formData.append('senderId', localStorage.getItem('titan_device_id') || 'dev');
     formData.append('senderName', localStorage.getItem('titan_device_name') || 'Device');
+    if (preTransferId) {
+      formData.append('transferId', preTransferId);
+    }
 
     let targetEndpoint = '';
     if (isSendingFromLaptop) {
@@ -68,7 +109,11 @@ export default function TransferProgressModal({ targetDevice, item, onClose }) {
           zip.file(f.webkitRelativePath || f.name, f);
         }
         const zipBlob = await zip.generateAsync({ type: 'blob' }, (meta) => {
-          setProgress(Math.round(meta.percent / 2)); // 0-50% for zipping
+          const zPct = Math.round(meta.percent);
+          setProgress(zPct);
+          window.dispatchEvent(new CustomEvent('titan-active-transfer-progress', {
+            detail: { id: currentTransferId, progress: zPct, speed: 'Zipping...' }
+          }));
         });
         const zipName = item.name.endsWith('.zip') ? item.name : `${item.name}.zip`;
         formData.append('file', zipBlob, zipName);
@@ -101,17 +146,21 @@ export default function TransferProgressModal({ targetDevice, item, onClose }) {
 
     xhr.upload.onprogress = (e) => {
       if (e.lengthComputable) {
-        const factor = isSendingFromLaptop ? 0.5 : (item.type === 'folder' ? 0.5 : 1.0);
-        const basePct = item.type === 'folder' ? 50 : 0;
-        const uploadPct = Math.round((e.loaded / e.total) * (factor * 100));
-        setProgress(basePct + uploadPct);
+        const uploadPct = Math.round((e.loaded / e.total) * 100);
+        setProgress(uploadPct);
         setTransferredBytes(e.loaded);
 
         const elapsed = (Date.now() - startTime) / 1000;
+        let currentSpeed = '0 MB/s';
         if (elapsed > 0.1) {
           const mbps = ((e.loaded / (1024 * 1024)) / elapsed).toFixed(1);
-          setSpeed(`${mbps} MB/s`);
+          currentSpeed = `${mbps} MB/s`;
+          setSpeed(currentSpeed);
         }
+
+        window.dispatchEvent(new CustomEvent('titan-active-transfer-progress', {
+          detail: { id: currentTransferId, progress: uploadPct, speed: currentSpeed, loaded: e.loaded }
+        }));
       }
     };
 
@@ -121,22 +170,38 @@ export default function TransferProgressModal({ targetDevice, item, onClose }) {
         try { respData = JSON.parse(xhr.responseText); } catch (e) {}
 
         if (isSendingFromLaptop) {
-          // Laptop staging complete: DO NOT mark done yet! Wait for Mobile to connect and pull
-          const transferId = respData.transferId;
-          setProgress(65);
+          const transferId = respData.transferId || preTransferId;
           setWaitingMobile(true);
-          setStatusMessage('Waiting for Mobile Device to connect & receive...');
+          setStatusMessage('Streaming to Mobile Device...');
+
+          // Listen for Mobile download progress
+          const handlePeerProg = (e) => {
+            if (e.detail?.percent !== undefined) {
+              setProgress(e.detail.percent);
+              if (e.detail.speed) setSpeed(e.detail.speed);
+              if (e.detail.loaded) setTransferredBytes(e.detail.loaded);
+              setStatusMessage(`Transferring to Mobile: ${e.detail.percent}%`);
+              window.dispatchEvent(new CustomEvent('titan-active-transfer-progress', {
+                detail: { id: currentTransferId, progress: e.detail.percent, speed: e.detail.speed }
+              }));
+            }
+          };
+          window.addEventListener('titan-peer-progress', handlePeerProg);
 
           // Listen for WebSocket ack/completion event
           const handleWsAck = (e) => {
             if (!transferId || e.detail?.transferId === transferId) {
               cleanupTimers();
               window.removeEventListener('titan-transfer-completed', handleWsAck);
+              window.removeEventListener('titan-peer-progress', handlePeerProg);
               setProgress(100);
               setIsDone(true);
               setWaitingMobile(false);
               setStatusMessage('Transferred to Mobile Device successfully!');
               confetti({ particleCount: 60, spread: 60, origin: { y: 0.6 } });
+              window.dispatchEvent(new CustomEvent('titan-active-transfer-complete', {
+                detail: { id: currentTransferId }
+              }));
             }
           };
           window.addEventListener('titan-transfer-completed', handleWsAck);
@@ -151,20 +216,24 @@ export default function TransferProgressModal({ targetDevice, item, onClose }) {
                 if (sData.completed) {
                   cleanupTimers();
                   window.removeEventListener('titan-transfer-completed', handleWsAck);
+                  window.removeEventListener('titan-peer-progress', handlePeerProg);
                   setProgress(100);
                   setIsDone(true);
                   setWaitingMobile(false);
                   setStatusMessage('Transferred to Mobile Device successfully!');
                   confetti({ particleCount: 60, spread: 60, origin: { y: 0.6 } });
+                  window.dispatchEvent(new CustomEvent('titan-active-transfer-complete', {
+                    detail: { id: currentTransferId }
+                  }));
                 }
               }
             } catch (e) {}
           }, 1500);
 
-          // Helpful status update after 10s if mobile hasn't grabbed it yet
+          // Helpful status update after 12s if mobile hasn't grabbed it yet
           timeoutTimerRef.current = setTimeout(() => {
             setStatusMessage('Staged in queue. Open Titan Plus Share on mobile to receive.');
-          }, 10000);
+          }, 12000);
 
         } else {
           // Mobile sent to Laptop directly: transfer finished
@@ -176,6 +245,9 @@ export default function TransferProgressModal({ targetDevice, item, onClose }) {
             spread: 60,
             origin: { y: 0.6 }
           });
+          window.dispatchEvent(new CustomEvent('titan-active-transfer-complete', {
+            detail: { id: currentTransferId }
+          }));
         }
       } else {
         setError(`Transfer failed (HTTP ${xhr.status})`);
@@ -204,6 +276,9 @@ export default function TransferProgressModal({ targetDevice, item, onClose }) {
     if (xhrRef.current) {
       try { xhrRef.current.abort(); } catch (e) {}
     }
+    window.dispatchEvent(new CustomEvent('titan-active-transfer-cancel', {
+      detail: { id: item.name }
+    }));
     onClose();
   };
 

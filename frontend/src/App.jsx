@@ -25,7 +25,7 @@ import TransferProgressModal from './components/TransferProgressModal';
 import LinksView from './components/LinksView';
 import SettingsView from './components/SettingsView';
 import IncomingTransferModal from './components/IncomingTransferModal';
-import { getServerUrl, setServerUrl, getDeviceId, getDeviceName } from './api';
+import { getServerUrl, setServerUrl, getDeviceId, getDeviceName, formatBytes } from './api';
 
 export default function App() {
   const [activeTab, setActiveTab] = useState('home'); // 'home' | 'links' | 'settings'
@@ -35,6 +35,7 @@ export default function App() {
   const [transferTarget, setTransferTarget] = useState(null);
   const [incomingTransfer, setIncomingTransfer] = useState(null);
   const [serverOnline, setServerOnline] = useState(true);
+  const [activeTransfers, setActiveTransfers] = useState([]);
   
   // Detect Desktop vs Mobile view
   const [isDesktopMode, setIsDesktopMode] = useState(window.innerWidth >= 768);
@@ -43,6 +44,62 @@ export default function App() {
     const handleResize = () => setIsDesktopMode(window.innerWidth >= 768);
     window.addEventListener('resize', handleResize);
     return () => window.removeEventListener('resize', handleResize);
+  }, []);
+
+  // Listen for active transfers and keep live ongoing history until success
+  useEffect(() => {
+    const handleAdd = (e) => {
+      const item = e.detail;
+      setActiveTransfers((prev) => {
+        const filtered = prev.filter((t) => t.id !== item.id && t.name !== item.name);
+        return [item, ...filtered];
+      });
+    };
+
+    const handleProgress = (e) => {
+      const { id, progress, speed, loaded } = e.detail;
+      setActiveTransfers((prev) =>
+        prev.map((t) => {
+          if (t.id === id || t.name === id) {
+            return { ...t, progress, speed: speed || t.speed, loaded: loaded || t.loaded };
+          }
+          return t;
+        })
+      );
+    };
+
+    const handleComplete = (e) => {
+      const { id } = e.detail;
+      setActiveTransfers((prev) =>
+        prev.map((t) => {
+          if (t.id === id || t.name === id) {
+            return { ...t, progress: 100, isDone: true };
+          }
+          return t;
+        })
+      );
+      // Automatically clear from active transfers 4 seconds after 100% completion
+      setTimeout(() => {
+        setActiveTransfers((prev) => prev.filter((t) => t.id !== id && t.name !== id));
+      }, 4000);
+    };
+
+    const handleCancel = (e) => {
+      const { id } = e.detail;
+      setActiveTransfers((prev) => prev.filter((t) => t.id !== id && t.name !== id));
+    };
+
+    window.addEventListener('titan-active-transfer', handleAdd);
+    window.addEventListener('titan-active-transfer-progress', handleProgress);
+    window.addEventListener('titan-active-transfer-complete', handleComplete);
+    window.addEventListener('titan-active-transfer-cancel', handleCancel);
+
+    return () => {
+      window.removeEventListener('titan-active-transfer', handleAdd);
+      window.removeEventListener('titan-active-transfer-progress', handleProgress);
+      window.removeEventListener('titan-active-transfer-complete', handleComplete);
+      window.removeEventListener('titan-active-transfer-cancel', handleCancel);
+    };
   }, []);
 
   // Keep stateRef in sync for Android back press handler
@@ -286,6 +343,8 @@ export default function App() {
                 }
                 setIncomingTransfer(data.payload);
               }
+            } else if (data.event === 'peer-transfer-progress') {
+              window.dispatchEvent(new CustomEvent('titan-peer-progress', { detail: data.payload }));
             } else if (data.event === 'transfer-completed') {
               window.dispatchEvent(new CustomEvent('titan-transfer-completed', { detail: data.payload }));
             } else if (data.event === 'link-download-progress') {
@@ -420,6 +479,64 @@ export default function App() {
     setTransferTarget({ device, item });
   };
 
+  const renderOngoingTransfers = (isDesktop) => {
+    if (!activeTransfers || activeTransfers.length === 0) return null;
+    return (
+      <div className={`w-full ${isDesktop ? 'max-w-3xl mb-8' : 'mb-4'} space-y-2.5 animate-fadeIn`}>
+        <div className="flex items-center justify-between px-1">
+          <div className="flex items-center gap-2">
+            <span className="w-2 h-2 rounded-full bg-blue-600 animate-pulse" />
+            <span className="text-[11px] font-bold text-slate-700 uppercase tracking-wider">
+              Ongoing Transfers ({activeTransfers.length})
+            </span>
+          </div>
+          <span className="text-[10px] text-slate-400 font-medium">History active until complete</span>
+        </div>
+        {activeTransfers.map((t) => (
+          <div
+            key={t.id}
+            className="p-3.5 bg-white/95 backdrop-blur-md rounded-2xl border border-blue-100 shadow-sm flex items-center justify-between gap-3 transition-all"
+          >
+            <div className="flex items-center gap-3 min-w-0 flex-1">
+              <div className={`w-9 h-9 rounded-xl flex items-center justify-center shrink-0 ${t.isDone ? 'bg-emerald-50 text-emerald-600' : 'bg-blue-50 text-blue-600'}`}>
+                {t.isDone ? <CheckCircle2 className="w-5 h-5 text-emerald-500" /> : <FileText className="w-4 h-4" />}
+              </div>
+              <div className="min-w-0 flex-1">
+                <div className="flex items-center justify-between mb-1">
+                  <span className="font-semibold text-slate-800 text-xs truncate max-w-[200px]">{t.name}</span>
+                  <span className={`text-xs font-bold ml-2 ${t.isDone ? 'text-emerald-600' : 'text-blue-600'}`}>
+                    {t.isDone ? 'Completed ✓' : `${t.progress}%`}
+                  </span>
+                </div>
+                <div className="w-full h-1.5 bg-slate-100 rounded-full overflow-hidden mb-1">
+                  <div
+                    className={`h-full rounded-full transition-all duration-300 ${t.isDone ? 'bg-emerald-500' : 'bg-blue-600'}`}
+                    style={{ width: `${t.progress}%` }}
+                  />
+                </div>
+                <div className="flex items-center justify-between text-[10px] text-slate-400">
+                  <span>{t.type === 'sending' ? `Sending to ${t.target || 'Device'}` : `Receiving from ${t.target || 'Device'}`}</span>
+                  <span>{t.speed || (t.isDone ? 'Finished' : 'Transferring...')}</span>
+                </div>
+              </div>
+            </div>
+            {!t.isDone && (
+              <button
+                onClick={() => {
+                  window.dispatchEvent(new CustomEvent('titan-active-transfer-cancel', { detail: { id: t.id } }));
+                }}
+                className="w-7 h-7 rounded-lg text-slate-400 hover:text-rose-500 hover:bg-rose-50 flex items-center justify-center transition shrink-0"
+                title="Cancel Transfer"
+              >
+                <CloseIcon className="w-4 h-4" />
+              </button>
+            )}
+          </div>
+        ))}
+      </div>
+    );
+  };
+
   return (
     <div className="min-h-screen bg-[#f8faff] text-slate-800 flex flex-col font-sans select-none relative overflow-x-hidden">
       
@@ -519,11 +636,14 @@ export default function App() {
                 <div className="w-full max-w-4xl flex flex-col items-center justify-center animate-fadeIn py-6">
                   
                   {/* Central Titan Plus Share Emblem */}
-                  <div className="flex flex-col items-center text-center mb-12">
+                  <div className="flex flex-col items-center text-center mb-8">
                     <img src="/logo.png" alt="Titan Plus Share" className="w-24 h-24 rounded-[30px] shadow-2xl shadow-blue-500/35 object-cover mb-4 transform hover:scale-105 transition duration-300" />
                     <h2 className="text-3xl font-extrabold text-slate-900 tracking-tight mb-1">Titan Plus Share</h2>
                     <p className="text-sm text-slate-400 font-medium">PC & Mobile File Sharing</p>
                   </div>
+
+                  {/* Active Ongoing Transfers History */}
+                  {renderOngoingTransfers(true)}
 
                   {/* 1x4 Horizontal Row of Cards */}
                   <div className="grid grid-cols-4 gap-6 w-full max-w-3xl">
@@ -609,6 +729,9 @@ export default function App() {
           <div className="flex-1 flex flex-col justify-center w-full min-w-0">
             {activeTab === 'home' && (
               <div className="animate-fadeIn my-auto w-full">
+                {/* Active Ongoing Transfers History */}
+                {renderOngoingTransfers(false)}
+
                 {/* 2x2 Grid of White Cards */}
                 <div className="grid grid-cols-2 gap-3 sm:gap-4">
                   

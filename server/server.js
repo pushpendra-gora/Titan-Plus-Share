@@ -839,17 +839,67 @@ app.post('/api/transfer/send', upload.single('file'), (req, res) => {
   res.json({ success: true, message: 'Transfer received successfully', savedTo: finalDestination });
 });
 
-// Laptop Pushes to Mobile Device (Staged direct LAN transfer)
-app.post('/api/transfer/push', upload.single('file'), (req, res) => {
-  const { targetDeviceId, senderName, originalName, transferType, textContent, filePath: bodyFilePath } = req.body;
+// Announce a transfer immediately BEFORE file bytes start uploading (Mobile alerted in 2ms)
+app.post('/api/transfer/init-push', (req, res) => {
+  const { targetDeviceId, senderName, fileName, fileSize, transferType, textContent } = req.body;
   const primaryIp = getLocalIpAddresses()[0];
   const targetDevice = pairedDevices.find(d => 
     d.deviceId === targetDeviceId || 
     (d.ip && targetDeviceId && (targetDeviceId.includes(d.ip) || d.deviceId === targetDeviceId))
   );
 
+  const transferId = crypto.randomBytes(8).toString('hex');
+  const isText = transferType === 'text' || !!textContent;
+
+  pendingPushes[transferId] = {
+    transferId,
+    targetDeviceId,
+    targetDeviceType: targetDevice?.deviceType || 'mobile',
+    targetDeviceIp: targetDevice?.ip || '',
+    senderName: senderName || 'Laptop',
+    fileName: fileName || (isText ? 'Text Message' : 'File'),
+    fileSize: fileSize || 0,
+    transferType: isText ? 'text' : 'file',
+    textContent: textContent || '',
+    status: 'staged',
+    serverUrl: `http://${primaryIp}:${PORT}`,
+    downloadUrl: `http://${primaryIp}:${PORT}/api/transfer/pull/${transferId}`,
+    createdAt: Date.now()
+  };
+
+  broadcastWs('incoming-file-push', {
+    transferId,
+    targetDeviceId,
+    targetDeviceType: targetDevice?.deviceType || 'mobile',
+    targetDeviceIp: targetDevice?.ip || '',
+    senderName: senderName || 'Laptop',
+    fileName: fileName || (isText ? 'Text Message' : 'File'),
+    fileSize: fileSize || 0,
+    transferType: isText ? 'text' : 'file',
+    textContent: textContent || '',
+    serverUrl: `http://${primaryIp}:${PORT}`,
+    downloadUrl: `http://${primaryIp}:${PORT}/api/transfer/pull/${transferId}`
+  });
+
+  res.json({
+    success: true,
+    transferId,
+    downloadUrl: `http://${primaryIp}:${PORT}/api/transfer/pull/${transferId}`
+  });
+});
+
+// Laptop Pushes to Mobile Device (Staged direct LAN transfer)
+app.post('/api/transfer/push', upload.single('file'), (req, res) => {
+  const { targetDeviceId, senderName, originalName, transferType, textContent, filePath: bodyFilePath, transferId: existingId } = req.body;
+  const primaryIp = getLocalIpAddresses()[0];
+  const targetDevice = pairedDevices.find(d => 
+    d.deviceId === targetDeviceId || 
+    (d.ip && targetDeviceId && (targetDeviceId.includes(d.ip) || d.deviceId === targetDeviceId))
+  );
+
+  const transferId = existingId || crypto.randomBytes(8).toString('hex');
+
   if (transferType === 'text' || textContent) {
-    const transferId = crypto.randomBytes(8).toString('hex');
     pendingPushes[transferId] = {
       transferId,
       targetDeviceId,
@@ -901,8 +951,6 @@ app.post('/api/transfer/push', upload.single('file'), (req, res) => {
     return res.status(400).json({ error: 'No file uploaded or found on server' });
   }
 
-  const transferId = crypto.randomBytes(8).toString('hex');
-
   pendingPushes[transferId] = {
     transferId,
     targetDeviceId,
@@ -940,32 +988,43 @@ app.post('/api/transfer/push', upload.single('file'), (req, res) => {
 });
 
 // Mobile Pulls/Streams the pushed file from Laptop Server
-app.get('/api/transfer/pull/:id', (req, res) => {
+app.get('/api/transfer/pull/:id', async (req, res) => {
   const { id } = req.params;
   const push = pendingPushes[id];
-  if (!push || !fs.existsSync(push.filePath)) {
-    return res.status(404).send('Transfer expired or file not found');
+  if (!push) {
+    return res.status(404).send('Transfer expired or not found');
+  }
+
+  // Gracefully wait up to 45s if file is being written to server over localhost
+  let waited = 0;
+  while ((!push.filePath || !fs.existsSync(push.filePath)) && waited < 45000) {
+    await new Promise(r => setTimeout(r, 200));
+    waited += 200;
+  }
+
+  if (!push.filePath || !fs.existsSync(push.filePath)) {
+    return res.status(404).send('Transfer file not available');
   }
 
   res.setHeader('Content-Disposition', `attachment; filename="${encodeURIComponent(push.fileName)}"`);
   res.setHeader('Content-Type', 'application/octet-stream');
   res.setHeader('Content-Length', push.fileSize);
 
-  const stream = fs.createReadStream(push.filePath);
+  const stream = fs.createReadStream(push.filePath, { highWaterMark: 128 * 1024 });
   stream.pipe(res);
 
   res.on('finish', () => {
     push.status = 'completed';
     push.completedAt = Date.now();
     broadcastWs('transfer-completed', { transferId: id, success: true });
-    // Clean up temporary uploads after 60 seconds (only if in uploads dir)
+    // Clean up temporary uploads after 120 seconds
     setTimeout(() => {
       try {
         if (push.filePath.includes('uploads') && fs.existsSync(push.filePath)) {
           fs.unlinkSync(push.filePath);
         }
       } catch (e) { }
-    }, 60000);
+    }, 120000);
   });
 });
 
@@ -977,6 +1036,12 @@ app.post('/api/transfer/ack', (req, res) => {
     pendingPushes[transferId].completedAt = Date.now();
   }
   broadcastWs('transfer-completed', { transferId, success: !!success });
+  res.json({ success: true });
+});
+
+// Live peer download progress reporting
+app.post('/api/transfer/progress', (req, res) => {
+  broadcastWs('peer-transfer-progress', req.body);
   res.json({ success: true });
 });
 

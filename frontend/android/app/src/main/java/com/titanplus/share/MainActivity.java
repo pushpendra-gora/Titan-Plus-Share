@@ -241,66 +241,74 @@ public class MainActivity extends BridgeActivity {
             }
         }
 
+        private volatile boolean isDownloadCancelled = false;
+
+        @JavascriptInterface
+        public void cancelActiveDownload() {
+            isDownloadCancelled = true;
+        }
+
         @JavascriptInterface
         public void downloadDirect(final String fileUrl, final String fileName) {
+            isDownloadCancelled = false;
             new Thread(() -> {
                 HttpURLConnection conn = null;
                 InputStream in = null;
-                OutputStream out = null;
+                FileOutputStream out = null;
+                File tempPartFile = null;
                 try {
                     URL url = new URL(fileUrl);
                     conn = (HttpURLConnection) url.openConnection();
-                    conn.setConnectTimeout(10000);
-                    conn.setReadTimeout(60000);
+                    conn.setConnectTimeout(15000);
+                    conn.setReadTimeout(120000);
+                    conn.setRequestProperty("Accept-Encoding", "identity");
                     conn.connect();
 
                     int responseCode = conn.getResponseCode();
                     if (responseCode >= 200 && responseCode < 300) {
-                        int fileLength = conn.getContentLength();
-                        in = conn.getInputStream();
-
-                        String extension = MimeTypeMap.getFileExtensionFromUrl(fileName);
-                        String mimeType = extension != null ? MimeTypeMap.getSingleton().getMimeTypeFromExtension(extension.toLowerCase()) : "application/octet-stream";
-                        if (mimeType == null) mimeType = "application/octet-stream";
-
-                        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q) {
-                            ContentValues values = new ContentValues();
-                            values.put(MediaStore.Downloads.DISPLAY_NAME, fileName);
-                            values.put(MediaStore.Downloads.MIME_TYPE, mimeType);
-                            values.put(MediaStore.Downloads.RELATIVE_PATH, Environment.DIRECTORY_DOWNLOADS + "/TitanPlusShare");
-                            Uri uri = getContentResolver().insert(MediaStore.Downloads.EXTERNAL_CONTENT_URI, values);
-                            if (uri != null) {
-                                out = getContentResolver().openOutputStream(uri);
+                        long fileLength = -1;
+                        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.N) {
+                            fileLength = conn.getContentLengthLong();
+                        } else {
+                            String header = conn.getHeaderField("Content-Length");
+                            if (header != null) {
+                                try { fileLength = Long.parseLong(header); } catch (Exception ignored) {}
                             }
                         }
 
-                        if (out == null) {
-                            File downloadDir = Environment.getExternalStoragePublicDirectory(Environment.DIRECTORY_DOWNLOADS);
-                            File targetDir = new File(downloadDir, "TitanPlusShare");
-                            if (!targetDir.exists()) targetDir.mkdirs();
-                            File targetFile = new File(targetDir, fileName);
-                            out = new FileOutputStream(targetFile);
-                        }
+                        // Use temporary file in cache to prevent fragmented/broken files in Downloads
+                        File cacheDir = getExternalCacheDir() != null ? getExternalCacheDir() : getCacheDir();
+                        if (!cacheDir.exists()) cacheDir.mkdirs();
+                        tempPartFile = new File(cacheDir, "titan_part_" + System.currentTimeMillis() + ".tmp");
+                        if (tempPartFile.exists()) tempPartFile.delete();
 
-                        byte[] buffer = new byte[65536];
+                        in = conn.getInputStream();
+                        out = new FileOutputStream(tempPartFile);
+
+                        byte[] buffer = new byte[131072]; // 128 KB buffer for fast high-speed transfer
                         long total = 0;
                         int count;
                         long lastReport = 0;
+                        long startTime = System.currentTimeMillis();
 
-                        while ((count = in.read(buffer)) != -1) {
+                        while (!isDownloadCancelled && (count = in.read(buffer)) != -1) {
                             total += count;
                             out.write(buffer, 0, count);
 
                             long now = System.currentTimeMillis();
-                            if (fileLength > 0 && (now - lastReport > 200)) {
+                            if (now - lastReport > 250) {
                                 lastReport = now;
-                                final int pct = (int) ((total * 100) / fileLength);
+                                final int pct = fileLength > 0 ? (int) Math.min(99, (total * 100L) / fileLength) : 0;
                                 final long currentLoaded = total;
                                 final long currentTotal = fileLength;
+                                final double elapsedSec = Math.max(0.1, (now - startTime) / 1000.0);
+                                final double mbps = (currentLoaded / (1024.0 * 1024.0)) / elapsedSec;
+                                final String speedStr = String.format(java.util.Locale.US, "%.1f MB/s", mbps);
+
                                 runOnUiThread(() -> {
                                     if (getBridge() != null && getBridge().getWebView() != null) {
                                         getBridge().getWebView().evaluateJavascript(
-                                            "window.dispatchEvent(new CustomEvent('titan-native-download-progress', { detail: { percent: " + pct + ", loaded: " + currentLoaded + ", total: " + currentTotal + " } }));",
+                                            "window.dispatchEvent(new CustomEvent('titan-native-download-progress', { detail: { percent: " + pct + ", loaded: " + currentLoaded + ", total: " + currentTotal + ", speed: '" + speedStr + "' } }));",
                                             null
                                         );
                                     }
@@ -309,6 +317,56 @@ public class MainActivity extends BridgeActivity {
                         }
 
                         out.flush();
+                        out.close();
+                        out = null;
+
+                        if (isDownloadCancelled) {
+                            if (tempPartFile != null && tempPartFile.exists()) tempPartFile.delete();
+                            return;
+                        }
+
+                        // Complete: Now safely copy/move to public Downloads/TitanPlusShare (NO CORRUPT FRAGMENTS)
+                        String extension = MimeTypeMap.getFileExtensionFromUrl(fileName);
+                        String mimeType = extension != null ? MimeTypeMap.getSingleton().getMimeTypeFromExtension(extension.toLowerCase()) : "application/octet-stream";
+                        if (mimeType == null) mimeType = "application/octet-stream";
+
+                        boolean savedSuccess = false;
+                        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q) {
+                            ContentValues values = new ContentValues();
+                            values.put(MediaStore.Downloads.DISPLAY_NAME, fileName);
+                            values.put(MediaStore.Downloads.MIME_TYPE, mimeType);
+                            values.put(MediaStore.Downloads.RELATIVE_PATH, Environment.DIRECTORY_DOWNLOADS + "/TitanPlusShare");
+                            Uri uri = getContentResolver().insert(MediaStore.Downloads.EXTERNAL_CONTENT_URI, values);
+                            if (uri != null) {
+                                try (OutputStream destOut = getContentResolver().openOutputStream(uri);
+                                     FileInputStream fis = new FileInputStream(tempPartFile)) {
+                                    byte[] buf = new byte[131072];
+                                    int r;
+                                    while ((r = fis.read(buf)) != -1) {
+                                        destOut.write(buf, 0, r);
+                                    }
+                                    destOut.flush();
+                                    savedSuccess = true;
+                                }
+                            }
+                        }
+
+                        if (!savedSuccess) {
+                            File downloadDir = Environment.getExternalStoragePublicDirectory(Environment.DIRECTORY_DOWNLOADS);
+                            File targetDir = new File(downloadDir, "TitanPlusShare");
+                            if (!targetDir.exists()) targetDir.mkdirs();
+                            File targetFile = new File(targetDir, fileName);
+                            if (targetFile.exists()) targetFile.delete();
+                            tempPartFile.renameTo(targetFile);
+                            MediaScannerConnection.scanFile(MainActivity.this, new String[]{targetFile.getAbsolutePath()}, null, null);
+                            savedSuccess = true;
+                        }
+
+                        // Clean up temporary part file
+                        if (tempPartFile != null && tempPartFile.exists()) {
+                            tempPartFile.delete();
+                        }
+
                         showNotification("Download Complete!", fileName + " saved to Downloads/TitanPlusShare");
                         runOnUiThread(() -> {
                             if (getBridge() != null && getBridge().getWebView() != null) {
@@ -319,6 +377,7 @@ public class MainActivity extends BridgeActivity {
                             }
                         });
                     } else {
+                        if (tempPartFile != null && tempPartFile.exists()) tempPartFile.delete();
                         runOnUiThread(() -> {
                             if (getBridge() != null && getBridge().getWebView() != null) {
                                 getBridge().getWebView().evaluateJavascript(
@@ -329,6 +388,7 @@ public class MainActivity extends BridgeActivity {
                         });
                     }
                 } catch (Exception e) {
+                    if (tempPartFile != null && tempPartFile.exists()) tempPartFile.delete();
                     final String err = e.getMessage() != null ? e.getMessage() : "Download error";
                     runOnUiThread(() -> {
                         if (getBridge() != null && getBridge().getWebView() != null) {
@@ -342,6 +402,9 @@ public class MainActivity extends BridgeActivity {
                     try { if (in != null) in.close(); } catch (Exception ignored) {}
                     try { if (out != null) out.close(); } catch (Exception ignored) {}
                     if (conn != null) conn.disconnect();
+                    if (isDownloadCancelled && tempPartFile != null && tempPartFile.exists()) {
+                        tempPartFile.delete();
+                    }
                 }
             }).start();
         }

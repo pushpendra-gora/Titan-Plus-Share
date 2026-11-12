@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useRef } from 'react';
 import { Download, CheckCircle2, FileText, ArrowDownLeft, X, FolderCheck, Copy, Check, AlignLeft } from 'lucide-react';
 import { formatBytes, getServerUrl } from '../api';
 import confetti from 'canvas-confetti';
@@ -8,8 +8,10 @@ export default function IncomingTransferModal({ incoming, onClose }) {
   const [downloading, setDownloading] = useState(false);
   const [progress, setProgress] = useState(0);
   const [transferredBytes, setTransferredBytes] = useState(0);
+  const [speed, setSpeed] = useState('');
   const [completed, setCompleted] = useState(incoming.isCompleted || incoming.transferType === 'text');
   const [copied, setCopied] = useState(false);
+  const xhrRef = React.useRef(null);
   
   const isText = incoming.transferType === 'text' || !!incoming.textContent;
 
@@ -80,12 +82,46 @@ export default function IncomingTransferModal({ incoming, onClose }) {
     setProgress(5);
     setTransferredBytes(0);
 
+    const transferKey = incoming.transferId || incoming.fileName;
+    window.dispatchEvent(new CustomEvent('titan-active-transfer', {
+      detail: {
+        id: transferKey,
+        name: incoming.fileName,
+        size: incoming.fileSize,
+        target: incoming.senderName || 'Sender',
+        type: 'receiving',
+        progress: 0,
+        speed: '0 MB/s',
+        status: 'active'
+      }
+    }));
+
     // Prefer high-performance Android direct native download
     if (window.TitanNativeBridge && typeof window.TitanNativeBridge.downloadDirect === 'function') {
       const handleNativeProg = (e) => {
         if (e.detail?.percent !== undefined) {
           setProgress(e.detail.percent);
           if (e.detail.loaded) setTransferredBytes(e.detail.loaded);
+          if (e.detail.speed) setSpeed(e.detail.speed);
+
+          // Real-time progress reporting back to laptop server
+          if (incoming.transferId) {
+            fetch(`${getServerHost()}/api/transfer/progress`, {
+              method: 'POST',
+              headers: { 'Content-Type': 'application/json' },
+              body: JSON.stringify({
+                transferId: incoming.transferId,
+                percent: e.detail.percent,
+                loaded: e.detail.loaded,
+                total: e.detail.total,
+                speed: e.detail.speed
+              })
+            }).catch(() => {});
+          }
+
+          window.dispatchEvent(new CustomEvent('titan-active-transfer-progress', {
+            detail: { id: transferKey, progress: e.detail.percent, speed: e.detail.speed, loaded: e.detail.loaded }
+          }));
         }
       };
 
@@ -96,6 +132,10 @@ export default function IncomingTransferModal({ incoming, onClose }) {
         confetti({ particleCount: 60, spread: 60, origin: { y: 0.6 } });
         window.removeEventListener('titan-native-download-progress', handleNativeProg);
         window.removeEventListener('titan-native-download-complete', handleNativeDone);
+
+        window.dispatchEvent(new CustomEvent('titan-active-transfer-complete', {
+          detail: { id: transferKey }
+        }));
 
         // Send ACK back to server
         if (incoming.transferId) {
@@ -111,6 +151,9 @@ export default function IncomingTransferModal({ incoming, onClose }) {
         setDownloading(false);
         window.removeEventListener('titan-native-download-progress', handleNativeProg);
         window.removeEventListener('titan-native-download-error', handleNativeErr);
+        window.dispatchEvent(new CustomEvent('titan-active-transfer-cancel', {
+          detail: { id: transferKey }
+        }));
       };
 
       window.addEventListener('titan-native-download-progress', handleNativeProg);
@@ -122,6 +165,7 @@ export default function IncomingTransferModal({ incoming, onClose }) {
     }
 
     const xhr = new XMLHttpRequest();
+    xhrRef.current = xhr;
     xhr.open('GET', downloadUrl, true);
     xhr.responseType = 'blob';
 
@@ -130,6 +174,9 @@ export default function IncomingTransferModal({ incoming, onClose }) {
         const pct = Math.round((e.loaded / e.total) * 100);
         setProgress(pct);
         setTransferredBytes(e.loaded);
+        window.dispatchEvent(new CustomEvent('titan-active-transfer-progress', {
+          detail: { id: transferKey, progress: pct, loaded: e.loaded }
+        }));
       }
     };
 
@@ -139,6 +186,10 @@ export default function IncomingTransferModal({ incoming, onClose }) {
         setCompleted(true);
         setDownloading(false);
         confetti({ particleCount: 60, spread: 60, origin: { y: 0.6 } });
+
+        window.dispatchEvent(new CustomEvent('titan-active-transfer-complete', {
+          detail: { id: transferKey }
+        }));
 
         const blob = xhr.response;
 
@@ -175,9 +226,25 @@ export default function IncomingTransferModal({ incoming, onClose }) {
 
     xhr.onerror = () => {
       setDownloading(false);
+      window.dispatchEvent(new CustomEvent('titan-active-transfer-cancel', {
+        detail: { id: transferKey }
+      }));
     };
 
     xhr.send();
+  };
+
+  const handleCancel = () => {
+    if (window.TitanNativeBridge && typeof window.TitanNativeBridge.cancelActiveDownload === 'function') {
+      window.TitanNativeBridge.cancelActiveDownload();
+    }
+    if (xhrRef.current) {
+      try { xhrRef.current.abort(); } catch (e) {}
+    }
+    window.dispatchEvent(new CustomEvent('titan-active-transfer-cancel', {
+      detail: { id: incoming.transferId || incoming.fileName }
+    }));
+    onClose();
   };
 
   const handleCopyText = () => {
@@ -270,6 +337,11 @@ export default function IncomingTransferModal({ incoming, onClose }) {
                   <span>{formatBytes(transferredBytes)} / {formatBytes(incoming.fileSize)}</span>
                   <span className="text-blue-600 font-bold">{progress}%</span>
                 </div>
+                {speed && !completed && (
+                  <div className="text-[11px] text-blue-600 font-semibold mt-1">
+                    Real Speed: {speed}
+                  </div>
+                )}
               </div>
             )}
 
@@ -286,8 +358,12 @@ export default function IncomingTransferModal({ incoming, onClose }) {
 
             {/* Action Button */}
             <button
-              onClick={onClose}
-              className="w-full py-3 bg-blue-600 hover:bg-blue-700 text-white font-semibold text-xs rounded-xl transition shadow-md shadow-blue-500/25"
+              onClick={completed ? onClose : handleCancel}
+              className={`w-full py-3 font-semibold text-xs rounded-xl transition shadow-md ${
+                completed 
+                  ? 'bg-blue-600 hover:bg-blue-700 text-white shadow-blue-500/25' 
+                  : 'bg-slate-100 hover:bg-slate-200 text-slate-600'
+              }`}
             >
               {completed ? 'Done' : 'Cancel Transfer'}
             </button>
