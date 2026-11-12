@@ -285,6 +285,7 @@ function tryDecodeSelfContained(str) {
         fileName: p.n || p.fileName || 'Shared_File',
         fileSize: p.s || p.fileSize || 0,
         type: p.t || p.type || 'file',
+        textContent: p.c || p.textContent || '',
         laptopIp: hostIp,
         laptopPort: hostPort,
         directUrl: p.u || `http://${hostIp}:${hostPort}/api/links/download/${token}`,

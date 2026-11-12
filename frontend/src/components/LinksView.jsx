@@ -174,6 +174,7 @@ export default function LinksView() {
     confetti({ particleCount: 50, spread: 60, origin: { y: 0.6 } });
     if (token) {
       fetch(`${getServerUrl()}/api/links/download/${token}`).catch(() => {});
+      fetch(`https://titan-plus-share.vercel.app/api/links/ack?token=${token}`).catch(() => {});
     }
     setTimeout(() => setTextCopied(false), 3000);
   };
@@ -287,20 +288,32 @@ export default function LinksView() {
 
     // Handle Text Note directly
     if (fileInfo.type === 'text') {
-      fetch(downloadUrl)
-        .then(r => r.text())
-        .then(text => {
-          navigator.clipboard.writeText(text);
-          setProgress(100);
-          setDownloading(false);
-          setDownloadSuccess(true);
-          confetti({ particleCount: 50, spread: 50, origin: { y: 0.6 } });
-        })
-        .catch(err => {
-          setError('Failed to fetch text note: ' + err.message);
-          setDownloading(false);
-        });
-      return;
+      const textToSave = fileInfo.textContent || '';
+      if (textToSave) {
+        navigator.clipboard.writeText(textToSave);
+        setProgress(100);
+        setDownloading(false);
+        setDownloadSuccess(true);
+        confetti({ particleCount: 50, spread: 50, origin: { y: 0.6 } });
+        // Save as file if native bridge is available
+        if (window.TitanNativeBridge && typeof window.TitanNativeBridge.saveBase64ToDownloads === 'function') {
+          const b64 = btoa(unescape(encodeURIComponent(textToSave)));
+          window.TitanNativeBridge.saveBase64ToDownloads(b64, 'Shared_Text.txt');
+        } else {
+          const blob = new Blob([textToSave], { type: 'text/plain;charset=utf-8' });
+          const a = document.createElement('a');
+          a.href = URL.createObjectURL(blob);
+          a.download = 'Shared_Text.txt';
+          document.body.appendChild(a);
+          a.click();
+          document.body.removeChild(a);
+        }
+        if (fileInfo.token) {
+          fetch(`${getServerUrl()}/api/links/download/${fileInfo.token}`).catch(() => {});
+          fetch(`https://titan-plus-share.vercel.app/api/links/ack?token=${fileInfo.token}`).catch(() => {});
+        }
+        return;
+      }
     }
 
     // Native Android direct stream using MediaStore.Downloads
@@ -563,12 +576,17 @@ export default function LinksView() {
                 </div>
               </div>
 
-              <div className="flex items-center justify-between p-3 bg-slate-50 rounded-xl border border-slate-100 mb-5 text-xs text-slate-500">
+              <div className="flex items-center justify-between p-3 bg-slate-50 rounded-xl border border-slate-100 mb-3 text-xs text-slate-500">
                 <div className="flex items-center gap-1.5 font-medium">
                   <Clock className="w-3.5 h-3.5 text-blue-600" />
                   <span>Link Expiry</span>
                 </div>
                 <span className="font-semibold text-slate-700">{formatRemaining(fileInfo.remainingSeconds)}</span>
+              </div>
+
+              <div className="flex items-center gap-1.5 text-[11px] text-emerald-600 bg-emerald-50 px-3 py-2 rounded-xl border border-emerald-100 mb-4">
+                <Wifi className="w-3.5 h-3.5 shrink-0" />
+                <span>Direct High-Speed Stream (Same Wi-Fi or Mobile Hotspot)</span>
               </div>
 
               {downloading && (

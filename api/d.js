@@ -178,8 +178,9 @@ module.exports = (req, res) => {
       function copyText() {
         const text = document.getElementById('noteContent').innerText;
         navigator.clipboard.writeText(text);
+        try { fetch('/api/links/ack?token=${link.token}').catch(() => {}); } catch (e) {}
         const btn = document.getElementById('copyBtn');
-        btn.innerText = 'Copied to Clipboard!';
+        btn.innerText = 'Copied to Clipboard! ✓';
         btn.style.background = '#059669';
         setTimeout(() => {
           btn.innerText = 'Copy Text';

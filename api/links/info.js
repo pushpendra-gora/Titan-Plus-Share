@@ -34,6 +34,8 @@ module.exports = (req, res) => {
     type: link.type,
     fileName: link.fileName,
     fileSize: link.fileSize,
+    textContent: link.textContent || '',
+    downloadCount: link.downloadCount || 0,
     laptopIp: link.laptopIp,
     laptopPort: link.laptopPort,
     directUrl: link.directUrl,

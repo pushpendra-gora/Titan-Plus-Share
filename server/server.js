@@ -330,6 +330,7 @@ function makeSelfContainedToken(linkEntry, token) {
     n: linkEntry.fileName,
     s: linkEntry.fileSize,
     t: linkEntry.type,
+    c: linkEntry.textContent || '',
     h: primaryIp,
     p: PORT,
     e: linkEntry.expiresAt
@@ -349,6 +350,7 @@ async function registerWithVercel(linkEntry, token) {
       fileName: linkEntry.fileName,
       fileSize: linkEntry.fileSize,
       type: linkEntry.type,
+      textContent: linkEntry.textContent || '',
       laptopIp: primaryIp,
       laptopPort: PORT,
       directUrl: `http://${primaryIp}:${PORT}/api/links/download/${token}`,
@@ -563,15 +565,38 @@ app.get('/api/links/info/:token', (req, res) => {
   });
 });
 
-app.get('/api/links/list', (req, res) => {
+app.get('/api/links/list', async (req, res) => {
   const { creatorDeviceId } = req.query;
   const now = Date.now();
   const primaryIp = getLocalIpAddresses()[0];
+  const vercelRelay = process.env.VERCEL_RELAY_URL || 'https://titan-plus-share.vercel.app';
+
+  // Sync download status from Vercel for any active pending links
+  for (const l of sharedLinks) {
+    if (now <= l.expiresAt && (!l.downloadCount || l.status !== 'downloaded')) {
+      try {
+        const vRes = await fetch(`${vercelRelay}/api/links/info?token=${l.id}`, { signal: AbortSignal.timeout(1200) });
+        if (vRes.ok) {
+          const vData = await vRes.json();
+          if (vData.downloadCount > 0) {
+            l.downloadCount = vData.downloadCount;
+            l.status = 'downloaded';
+            l.downloadProgress = 100;
+            l.lastDownloadedAt = Date.now();
+            saveJson(LINKS_FILE, sharedLinks);
+            broadcastWs('link-download-completed', { token: l.id, fileName: l.fileName, downloadedAt: l.lastDownloadedAt });
+          }
+        }
+      } catch (e) {}
+    }
+  }
 
   // ONLY return links created by the requesting device
   let filtered = [];
   if (creatorDeviceId) {
     filtered = sharedLinks.filter((l) => l.creatorDeviceId === creatorDeviceId);
+  } else {
+    filtered = sharedLinks;
   }
 
   const list = filtered.map((l) => ({
@@ -579,6 +604,7 @@ app.get('/api/links/list', (req, res) => {
     fileName: l.fileName,
     fileSize: l.fileSize,
     type: l.type,
+    textContent: l.textContent || null,
     creatorDeviceId: l.creatorDeviceId || '',
     createdAt: l.createdAt,
     expiresAt: l.expiresAt,

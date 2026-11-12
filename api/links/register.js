@@ -14,7 +14,7 @@ module.exports = (req, res) => {
     return res.status(405).json({ error: 'Method not allowed' });
   }
 
-  const { token, fileName, fileSize, type, laptopIp, laptopPort, directUrl, expiresAt } = req.body || {};
+  const { token, fileName, fileSize, type, textContent, laptopIp, laptopPort, directUrl, expiresAt } = req.body || {};
 
   if (!token || !fileName) {
     return res.status(400).json({ error: 'Missing token or fileName' });
@@ -25,10 +25,12 @@ module.exports = (req, res) => {
     fileName,
     fileSize: fileSize || 0,
     type: type || 'file',
+    textContent: textContent || '',
     laptopIp: laptopIp || '127.0.0.1',
     laptopPort: laptopPort || 51733,
     directUrl: directUrl || `http://${laptopIp}:${laptopPort}/api/links/download/${token}`,
     expiresAt: expiresAt || (Date.now() + 3 * 3600 * 1000),
+    downloadCount: 0,
     createdAt: Date.now()
   };
 
