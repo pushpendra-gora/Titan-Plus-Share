@@ -25,7 +25,7 @@ import TransferProgressModal from './components/TransferProgressModal';
 import LinksView from './components/LinksView';
 import SettingsView from './components/SettingsView';
 import IncomingTransferModal from './components/IncomingTransferModal';
-import { getServerUrl, getDeviceId, getDeviceName } from './api';
+import { getServerUrl, setServerUrl, getDeviceId, getDeviceName } from './api';
 
 export default function App() {
   const [activeTab, setActiveTab] = useState('home'); // 'home' | 'links' | 'settings'
@@ -275,7 +275,15 @@ export default function App() {
             const data = JSON.parse(event.data);
             if (data.event === 'incoming-file-push') {
               const myId = getDeviceId();
-              if (!data.payload.targetDeviceId || data.payload.targetDeviceId === myId) {
+              const isMobile = /Android|iPhone|iPad/i.test(navigator.userAgent);
+              const shouldAccept = !data.payload.targetDeviceId || 
+                                   data.payload.targetDeviceId === myId ||
+                                   (isMobile && (data.payload.targetDeviceType === 'mobile' || !data.payload.targetDeviceType));
+
+              if (shouldAccept) {
+                if (data.payload.serverUrl) {
+                  setServerUrl(data.payload.serverUrl);
+                }
                 setIncomingTransfer(data.payload);
               }
             } else if (data.event === 'transfer-completed') {
@@ -307,9 +315,28 @@ export default function App() {
     };
 
     connectWs();
+
+    // Mobile fallback poller: guarantees no pushed text/file is missed even if network fluctuated
+    let pollInterval = null;
+    if (/Android|iPhone|iPad/i.test(navigator.userAgent)) {
+      pollInterval = setInterval(() => {
+        const srv = getServerUrl();
+        if (!srv || srv.includes('127.0.0.1')) return;
+        fetch(`${srv}/api/transfer/pending?deviceId=${getDeviceId()}&deviceType=mobile`, { signal: AbortSignal.timeout(2000) })
+          .then(r => r.json())
+          .then(pending => {
+            if (pending && pending.length > 0) {
+              setIncomingTransfer(prev => prev ? prev : pending[0]);
+            }
+          })
+          .catch(() => {});
+      }, 3000);
+    }
+
     return () => {
       if (ws) ws.close();
       if (reconnectTimer) clearTimeout(reconnectTimer);
+      if (pollInterval) clearInterval(pollInterval);
     };
   }, []);
 

@@ -14,6 +14,7 @@ export default function IncomingTransferModal({ incoming, onClose }) {
   const isText = incoming.transferType === 'text' || !!incoming.textContent;
 
   const getServerHost = () => {
+    if (incoming.serverUrl) return incoming.serverUrl;
     if (incoming.downloadUrl) {
       try {
         const u = new URL(incoming.downloadUrl);
@@ -29,6 +30,12 @@ export default function IncomingTransferModal({ incoming, onClose }) {
       : 'C:\\Users\\Public\\Downloads\\TitanPlusShare');
 
   useEffect(() => {
+    // Remember Laptop server host if received from laptop
+    const host = getServerHost();
+    if (host && !host.includes('127.0.0.1') && !host.includes('localhost')) {
+      localStorage.setItem('titan_server_url', host);
+    }
+
     // 1. Play offline audio chime
     playNotificationSound();
 
@@ -46,7 +53,7 @@ export default function IncomingTransferModal({ incoming, onClose }) {
       setCompleted(true);
       confetti({ particleCount: 40, spread: 50, origin: { y: 0.6 } });
       if (incoming.transferId) {
-        fetch(`${getServerHost()}/api/transfer/ack`, {
+        fetch(`${host}/api/transfer/ack`, {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
           body: JSON.stringify({ transferId: incoming.transferId, success: true })

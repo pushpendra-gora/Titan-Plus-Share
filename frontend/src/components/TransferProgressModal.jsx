@@ -161,10 +161,10 @@ export default function TransferProgressModal({ targetDevice, item, onClose }) {
             } catch (e) {}
           }, 1500);
 
-          // Timeout warning after 45s
+          // Helpful status update after 10s if mobile hasn't grabbed it yet
           timeoutTimerRef.current = setTimeout(() => {
-            setStatusMessage('Mobile device has not connected yet. Please open Titan Plus Share on phone.');
-          }, 45000);
+            setStatusMessage('Staged in queue. Open Titan Plus Share on mobile to receive.');
+          }, 10000);
 
         } else {
           // Mobile sent to Laptop directly: transfer finished
@@ -310,6 +310,21 @@ export default function TransferProgressModal({ targetDevice, item, onClose }) {
           >
             Transfer Completed
           </button>
+        ) : waitingMobile ? (
+          <div className="flex gap-2">
+            <button
+              onClick={onClose}
+              className="flex-1 py-3 bg-blue-600 hover:bg-blue-700 text-white font-semibold text-xs rounded-xl transition shadow-md shadow-blue-500/20"
+            >
+              Keep Queued in Background
+            </button>
+            <button
+              onClick={handleCancel}
+              className="py-3 px-4 bg-slate-100 hover:bg-slate-200 text-slate-500 font-medium text-xs rounded-xl transition"
+            >
+              Cancel
+            </button>
+          </div>
         ) : (
           <button
             onClick={handleCancel}

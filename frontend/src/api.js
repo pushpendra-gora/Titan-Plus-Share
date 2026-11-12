@@ -149,15 +149,19 @@ export async function getPairedDevices() {
     }
   } catch (e) {}
 
-  // Filter out self and incompatible device types
-  return combined.filter(d => {
-    if (d.deviceId === myId || d.deviceName === myName) return false;
-    // On mobile, show laptop targets
-    if (isMobile && d.deviceType === 'mobile' && d.deviceId === myId) return false;
-    // On laptop, show mobile targets
-    if (!isMobile && d.deviceType === 'laptop') return false;
-    return true;
-  });
+  // Filter out self and deduplicate by IP / deviceId
+  const seen = new Set();
+  const filtered = [];
+  for (const d of combined) {
+    if (d.deviceId === myId || d.deviceName === myName) continue;
+    if (isMobile && d.deviceType === 'mobile' && d.deviceId === myId) continue;
+    if (!isMobile && d.deviceType === 'laptop') continue;
+    const key = (d.ip && d.ip !== 'LAN' && d.ip !== '127.0.0.1') ? d.ip : d.deviceId;
+    if (seen.has(key)) continue;
+    seen.add(key);
+    filtered.push(d);
+  }
+  return filtered;
 }
 
 export async function removePairedDevice(deviceId) {

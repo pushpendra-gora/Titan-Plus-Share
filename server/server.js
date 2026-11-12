@@ -128,13 +128,50 @@ wss.on('connection', (ws) => {
       if (data.type === 'ping') {
         ws.send(JSON.stringify({ type: 'pong' }));
       } else if (data.type === 'identify') {
+        const clientIp = ws._socket?.remoteAddress?.replace(/^.*:/, '') || 'LAN';
         onlineClients.set(ws, {
           deviceId: data.deviceId,
           deviceName: data.deviceName,
           deviceType: data.deviceType,
-          ip: ws._socket?.remoteAddress?.replace(/^.*:/, '') || 'LAN'
+          ip: clientIp
         });
         ws.deviceId = data.deviceId;
+
+        // Auto-update pairedDevices list with fresh deviceId (avoids stale ID mismatch)
+        let changed = false;
+        pairedDevices = pairedDevices.map((d) => {
+          const matchIp = clientIp !== 'LAN' && d.ip === clientIp;
+          const matchName = d.deviceName === data.deviceName;
+          const matchId = d.deviceId === data.deviceId;
+          if (matchIp || matchName || matchId) {
+            changed = true;
+            return {
+              ...d,
+              deviceId: data.deviceId,
+              deviceName: data.deviceName || d.deviceName,
+              deviceType: data.deviceType || d.deviceType,
+              ip: clientIp !== 'LAN' ? clientIp : d.ip,
+              status: 'online',
+              lastSeen: Date.now()
+            };
+          }
+          return d;
+        });
+
+        // Deduplicate paired devices
+        const seen = new Set();
+        pairedDevices = pairedDevices.filter((d) => {
+          const key = (d.ip && d.ip !== 'LAN') ? d.ip : d.deviceId;
+          if (seen.has(key)) return false;
+          seen.add(key);
+          return true;
+        });
+
+        if (changed) {
+          saveJson(PAIRED_FILE, pairedDevices);
+          broadcastWs('devices-updated', pairedDevices);
+        }
+
         broadcastWs('online-peers-updated', Array.from(onlineClients.values()));
       } else if (data.type === 'transfer-progress') {
         broadcastWs('peer-transfer-progress', data);
@@ -191,12 +228,15 @@ app.post('/api/pair/authenticate', (req, res) => {
     return res.status(400).json({ error: 'Device details missing' });
   }
 
-  const existingIdx = pairedDevices.findIndex((d) => d.deviceId === deviceId);
+  const clientIp = ip || req.ip.replace('::ffff:', '');
+  const existingIdx = pairedDevices.findIndex((d) => 
+    d.deviceId === deviceId || (clientIp && clientIp !== '127.0.0.1' && d.ip === clientIp) || d.deviceName === deviceName
+  );
   const deviceRecord = {
     deviceId,
     deviceName,
     deviceType: deviceType || 'mobile',
-    ip: ip || req.ip.replace('::ffff:', ''),
+    ip: clientIp,
     pairedAt: new Date().toISOString(),
     status: 'online'
   };
@@ -206,6 +246,16 @@ app.post('/api/pair/authenticate', (req, res) => {
   } else {
     pairedDevices.push(deviceRecord);
   }
+
+  // Deduplicate
+  const seen = new Set();
+  pairedDevices = pairedDevices.filter((d) => {
+    const key = (d.ip && d.ip !== 'LAN' && d.ip !== '127.0.0.1') ? d.ip : d.deviceId;
+    if (seen.has(key)) return false;
+    seen.add(key);
+    return true;
+  });
+
   saveJson(PAIRED_FILE, pairedDevices);
   broadcastWs('devices-updated', pairedDevices);
 
@@ -792,29 +842,42 @@ app.post('/api/transfer/send', upload.single('file'), (req, res) => {
 // Laptop Pushes to Mobile Device (Staged direct LAN transfer)
 app.post('/api/transfer/push', upload.single('file'), (req, res) => {
   const { targetDeviceId, senderName, originalName, transferType, textContent, filePath: bodyFilePath } = req.body;
+  const primaryIp = getLocalIpAddresses()[0];
+  const targetDevice = pairedDevices.find(d => 
+    d.deviceId === targetDeviceId || 
+    (d.ip && targetDeviceId && (targetDeviceId.includes(d.ip) || d.deviceId === targetDeviceId))
+  );
 
   if (transferType === 'text' || textContent) {
     const transferId = crypto.randomBytes(8).toString('hex');
     pendingPushes[transferId] = {
       transferId,
       targetDeviceId,
+      targetDeviceType: targetDevice?.deviceType || 'mobile',
+      targetDeviceIp: targetDevice?.ip || '',
       senderName: senderName || 'Laptop',
       transferType: 'text',
       textContent: textContent || '',
       fileName: 'Text Message',
       fileSize: Buffer.byteLength(textContent || '', 'utf8'),
       status: 'staged',
+      serverUrl: `http://${primaryIp}:${PORT}`,
+      downloadUrl: `http://${primaryIp}:${PORT}/api/transfer/pull/${transferId}`,
       createdAt: Date.now()
     };
 
     broadcastWs('incoming-file-push', {
       transferId,
       targetDeviceId,
+      targetDeviceType: targetDevice?.deviceType || 'mobile',
+      targetDeviceIp: targetDevice?.ip || '',
       senderName: senderName || 'Laptop',
       transferType: 'text',
       textContent: textContent || '',
       fileName: 'Text Message',
-      fileSize: Buffer.byteLength(textContent || '', 'utf8')
+      fileSize: Buffer.byteLength(textContent || '', 'utf8'),
+      serverUrl: `http://${primaryIp}:${PORT}`,
+      downloadUrl: `http://${primaryIp}:${PORT}/api/transfer/pull/${transferId}`
     });
     return res.json({ success: true, transferId, message: 'Text staged for mobile' });
   }
@@ -839,26 +902,32 @@ app.post('/api/transfer/push', upload.single('file'), (req, res) => {
   }
 
   const transferId = crypto.randomBytes(8).toString('hex');
-  const primaryIp = getLocalIpAddresses()[0];
 
   pendingPushes[transferId] = {
     transferId,
     targetDeviceId,
+    targetDeviceType: targetDevice?.deviceType || 'mobile',
+    targetDeviceIp: targetDevice?.ip || '',
     senderName: senderName || 'Laptop',
     fileName: finalFileName,
     fileSize: finalFileSize,
     filePath: finalFilePath,
     transferType: 'file',
     status: 'staged',
+    serverUrl: `http://${primaryIp}:${PORT}`,
+    downloadUrl: `http://${primaryIp}:${PORT}/api/transfer/pull/${transferId}`,
     createdAt: Date.now()
   };
 
   broadcastWs('incoming-file-push', {
     transferId,
     targetDeviceId,
+    targetDeviceType: targetDevice?.deviceType || 'mobile',
+    targetDeviceIp: targetDevice?.ip || '',
     senderName: senderName || 'Laptop',
     fileName: finalFileName,
     fileSize: finalFileSize,
+    serverUrl: `http://${primaryIp}:${PORT}`,
     downloadUrl: `http://${primaryIp}:${PORT}/api/transfer/pull/${transferId}`
   });
 
@@ -927,10 +996,18 @@ app.get('/api/transfer/status/:id', (req, res) => {
 
 // Mobile checks for pending pushes (e.g., when mobile app was closed when laptop sent)
 app.get('/api/transfer/pending', (req, res) => {
-  const { deviceId } = req.query;
+  const { deviceId, deviceType } = req.query;
   const primaryIp = getLocalIpAddresses()[0];
+  const reqIp = req.ip.replace('::ffff:', '');
   const list = Object.values(pendingPushes)
-    .filter((p) => p.status === 'staged' && (!p.targetDeviceId || !deviceId || p.targetDeviceId === deviceId))
+    .filter((p) => {
+      if (p.status !== 'staged') return false;
+      if (!p.targetDeviceId) return true;
+      if (deviceId && p.targetDeviceId === deviceId) return true;
+      if (deviceType === 'mobile' || p.targetDeviceType === 'mobile') return true;
+      if (p.targetDeviceIp && p.targetDeviceIp === reqIp) return true;
+      return false;
+    })
     .map((p) => ({
       transferId: p.transferId,
       targetDeviceId: p.targetDeviceId,
@@ -939,6 +1016,7 @@ app.get('/api/transfer/pending', (req, res) => {
       fileSize: p.fileSize,
       transferType: p.transferType || 'file',
       textContent: p.textContent || '',
+      serverUrl: p.serverUrl || `http://${primaryIp}:${PORT}`,
       downloadUrl: `http://${primaryIp}:${PORT}/api/transfer/pull/${p.transferId}`
     }));
   res.json(list);
