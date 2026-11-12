@@ -24,6 +24,8 @@ import androidx.annotation.NonNull;
 import androidx.core.app.ActivityCompat;
 import androidx.core.app.NotificationCompat;
 import androidx.core.content.ContextCompat;
+import androidx.activity.OnBackPressedCallback;
+import android.widget.Toast;
 import com.getcapacitor.BridgeActivity;
 
 import android.content.ContentValues;
@@ -76,6 +78,43 @@ public class MainActivity extends BridgeActivity {
             // Native bridge for notifications and direct file saving
             webView.addJavascriptInterface(new TitanNativeBridge(), "TitanNativeBridge");
         }
+
+        // 4. Android Hardware & Gesture Back Button Handler
+        getOnBackPressedDispatcher().addCallback(this, new OnBackPressedCallback(true) {
+            private long lastBackPressTime = 0;
+
+            @Override
+            public void handleOnBackPressed() {
+                if (getBridge() != null && getBridge().getWebView() != null) {
+                    getBridge().getWebView().evaluateJavascript(
+                        "(function() { " +
+                        "  if (window.handleTitanBackPress && typeof window.handleTitanBackPress === 'function') { " +
+                        "    return window.handleTitanBackPress() === true; " +
+                        "  } " +
+                        "  return false; " +
+                        "})();",
+                        result -> {
+                            if ("true".equals(result)) {
+                                // Handled by web app (closed modal, scanner, or navigated to home)
+                                return;
+                            }
+                            // At root Home view with nothing open: double tap back to exit
+                            runOnUiThread(() -> {
+                                long now = System.currentTimeMillis();
+                                if (now - lastBackPressTime < 2000) {
+                                    finish();
+                                } else {
+                                    lastBackPressTime = now;
+                                    Toast.makeText(MainActivity.this, "Press back again to exit", Toast.LENGTH_SHORT).show();
+                                }
+                            });
+                        }
+                    );
+                } else {
+                    finish();
+                }
+            }
+        });
 
         handleSendIntent(getIntent());
     }

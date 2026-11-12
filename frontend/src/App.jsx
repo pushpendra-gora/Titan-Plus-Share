@@ -45,6 +45,89 @@ export default function App() {
     return () => window.removeEventListener('resize', handleResize);
   }, []);
 
+  // Keep stateRef in sync for Android back press handler
+  const stateRef = useRef({
+    activeTab,
+    selectedItem,
+    showTextModal,
+    showMediaModal,
+    transferTarget,
+    incomingTransfer
+  });
+
+  useEffect(() => {
+    stateRef.current = {
+      activeTab,
+      selectedItem,
+      showTextModal,
+      showMediaModal,
+      transferTarget,
+      incomingTransfer
+    };
+  }, [activeTab, selectedItem, showTextModal, showMediaModal, transferTarget, incomingTransfer]);
+
+  // Android Native Hardware / Gesture Back Press Handler
+  useEffect(() => {
+    if (!window.__titanBackStack) {
+      window.__titanBackStack = [];
+    }
+
+    window.registerTitanBackHandler = (fn) => {
+      window.__titanBackStack.push(fn);
+      return () => {
+        window.__titanBackStack = window.__titanBackStack.filter(h => h !== fn);
+      };
+    };
+
+    window.handleTitanBackPress = () => {
+      // 1. Check custom modal/scanner handlers registered in stack
+      if (window.__titanBackStack && window.__titanBackStack.length > 0) {
+        for (let i = window.__titanBackStack.length - 1; i >= 0; i--) {
+          try {
+            const handled = window.__titanBackStack[i]();
+            if (handled) return true;
+          } catch (e) {}
+        }
+      }
+
+      // 2. Check open root modals
+      const s = stateRef.current;
+      if (s.incomingTransfer) {
+        setIncomingTransfer(null);
+        return true;
+      }
+      if (s.transferTarget) {
+        setTransferTarget(null);
+        return true;
+      }
+      if (s.selectedItem) {
+        setSelectedItem(null);
+        return true;
+      }
+      if (s.showMediaModal) {
+        setShowMediaModal(false);
+        return true;
+      }
+      if (s.showTextModal) {
+        setShowTextModal(false);
+        return true;
+      }
+
+      // 3. If on Links or Settings, navigate back to Home
+      if (s.activeTab !== 'home') {
+        setActiveTab('home');
+        return true;
+      }
+
+      // 4. At root home screen with no modals
+      return false;
+    };
+
+    return () => {
+      window.handleTitanBackPress = null;
+    };
+  }, []);
+
   // Check server health
   useEffect(() => {
     const checkServer = async () => {

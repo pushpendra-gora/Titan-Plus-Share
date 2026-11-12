@@ -120,6 +120,23 @@ export default function LinksView() {
     }
   }, []);
 
+  // Handle Mobile hardware / gesture back button
+  useEffect(() => {
+    if (typeof window.registerTitanBackHandler === 'function') {
+      return window.registerTitanBackHandler(() => {
+        if (showScanner) {
+          setShowScanner(false);
+          return true;
+        }
+        if (fileInfo) {
+          setFileInfo(null);
+          return true;
+        }
+        return false;
+      });
+    }
+  }, [showScanner, fileInfo]);
+
   const validateLink = async (linkToValidate) => {
     const target = (linkToValidate || urlInput).trim();
     setError(null);

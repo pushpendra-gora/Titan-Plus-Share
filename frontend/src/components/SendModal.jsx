@@ -30,6 +30,24 @@ export default function SendModal({ item, onClose, onStartTransfer }) {
     loadDevices();
   }, []);
 
+  // Handle Mobile hardware / gesture back button
+  useEffect(() => {
+    if (typeof window.registerTitanBackHandler === 'function') {
+      return window.registerTitanBackHandler(() => {
+        if (scanning) {
+          setScanning(false);
+          return true;
+        }
+        if (view !== 'menu') {
+          setView('menu');
+          return true;
+        }
+        onClose();
+        return true;
+      });
+    }
+  }, [scanning, view, onClose]);
+
   const openPairing = async () => {
     setView('pairing');
     try {

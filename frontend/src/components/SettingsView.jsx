@@ -1,5 +1,5 @@
 import React, { useState, useEffect, useRef } from 'react';
-import { QrCode, Smartphone, Laptop, Trash2, Camera, Check, Server, HardDrive, Info, RefreshCw, Folder, Image, Wifi, Radio } from 'lucide-react';
+import { QrCode, Smartphone, Laptop, Trash2, Camera, Check, Server, HardDrive, Info, RefreshCw, Folder, Image, Wifi, Radio, Copy, CheckCircle2, ShieldCheck, X } from 'lucide-react';
 import { getDeviceId, getDeviceName, setDeviceName, getPairingInfo, getPairedDevices, removePairedDevice, authenticateDevice, getServerUrl, setServerUrl, autoDiscoverLaptopServer } from '../api';
 import { Html5Qrcode } from 'html5-qrcode';
 
@@ -55,6 +55,19 @@ export default function SettingsView({ isMobileMode, onNavigate }) {
     const timer = setInterval(() => testHostConnection(getServerUrl()), 5000);
     return () => clearInterval(timer);
   }, []);
+
+  // Handle Mobile hardware / gesture back button
+  useEffect(() => {
+    if (typeof window.registerTitanBackHandler === 'function') {
+      return window.registerTitanBackHandler(() => {
+        if (scanning) {
+          setScanning(false);
+          return true;
+        }
+        return false;
+      });
+    }
+  }, [scanning]);
 
   const handleSaveHostUrl = async () => {
     if (!hostUrl) return;
@@ -268,11 +281,304 @@ export default function SettingsView({ isMobileMode, onNavigate }) {
       const decodedText = await html5QrCode.scanFile(file, false);
       await processPairingPayload(decodedText);
     } catch (err) {
-      alert('Could not detect a valid QR code in this photo. Please try pointing the camera directly.');
+      setScanResult('Could not detect a valid QR code in this photo. Please try camera scan.');
     }
     e.target.value = '';
   };
 
+  // ==========================================
+  // DESKTOP / LAPTOP LAYOUT (!isMobileMode)
+  // ==========================================
+  if (!isMobileMode) {
+    return (
+      <div className="w-full max-w-7xl mx-auto px-6 py-4 space-y-6 animate-fadeIn pb-12">
+        {/* Top Header Bar */}
+        <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4 pb-4 border-b border-slate-100">
+          <div>
+            <div className="flex items-center gap-3">
+              <h2 className="text-2xl font-bold text-slate-900">System & Server Settings</h2>
+              <span className="px-3 py-1 bg-blue-50 text-blue-700 text-xs font-bold rounded-full border border-blue-100">
+                Laptop Server
+              </span>
+            </div>
+            <p className="text-xs text-slate-500 mt-1">
+              Configure host streaming server, local save directories, and paired mobile devices
+            </p>
+          </div>
+
+          <div className="flex items-center gap-3">
+            <div className="flex items-center gap-2 px-3.5 py-2 bg-white rounded-xl border border-slate-200 shadow-sm text-xs">
+              <span className={`w-2 h-2 rounded-full ${hostConnected ? 'bg-emerald-500 animate-pulse' : 'bg-amber-500'}`} />
+              <span className="font-semibold text-slate-700">{hostConnected ? 'Laptop Server Active' : 'Connecting...'}</span>
+              <span className="text-slate-400 font-mono font-medium">Port 51733</span>
+            </div>
+            <button
+              onClick={reloadData}
+              className="p-2.5 bg-white hover:bg-slate-50 text-slate-600 rounded-xl border border-slate-200 shadow-sm transition"
+              title="Refresh Server Status"
+            >
+              <RefreshCw className="w-4 h-4" />
+            </button>
+          </div>
+        </div>
+
+        {/* Main Desktop Grid: 8 Cols Left + 4 Cols Right */}
+        <div className="grid grid-cols-1 lg:grid-cols-12 gap-6 items-start">
+          
+          {/* LEFT COLUMN: 8 COLS */}
+          <div className="lg:col-span-8 space-y-6">
+
+            {/* Section 1: Host Server & Device Identity */}
+            <div className="bg-white rounded-[24px] p-6 shadow-card border border-slate-100">
+              <div className="flex items-center gap-3 mb-5">
+                <div className="w-10 h-10 rounded-xl bg-blue-50 text-blue-600 flex items-center justify-center border border-blue-100">
+                  <Laptop className="w-5 h-5" />
+                </div>
+                <div>
+                  <h3 className="text-base font-bold text-slate-800">Laptop Server & Identity</h3>
+                  <p className="text-xs text-slate-400">Network streaming address and device identity broadcast</p>
+                </div>
+              </div>
+
+              <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                <div>
+                  <label className="block text-xs font-semibold text-slate-600 mb-1.5">Laptop Device Name</label>
+                  <div className="flex items-center gap-2">
+                    <input
+                      type="text"
+                      value={deviceName}
+                      onChange={(e) => setDevName(e.target.value)}
+                      className="flex-1 px-4 py-2.5 bg-slate-50 border border-slate-200 rounded-xl text-sm font-semibold text-slate-800 outline-none focus:ring-2 focus:ring-blue-500/30 focus:border-blue-500"
+                    />
+                    <button
+                      onClick={handleSaveDeviceName}
+                      className="px-4 py-2.5 bg-blue-600 hover:bg-blue-700 text-white rounded-xl text-xs font-semibold transition shrink-0"
+                    >
+                      {savedName ? <Check className="w-4 h-4" /> : 'Save'}
+                    </button>
+                  </div>
+                </div>
+
+                <div>
+                  <label className="block text-xs font-semibold text-slate-600 mb-1.5">Host Server Address</label>
+                  <div className="flex items-center gap-2">
+                    <input
+                      type="text"
+                      value={hostUrl}
+                      onChange={(e) => setHostUrl(e.target.value)}
+                      className="flex-1 px-4 py-2.5 bg-slate-50 border border-slate-200 rounded-xl text-xs font-mono text-slate-800 outline-none focus:ring-2 focus:ring-blue-500/30 focus:border-blue-500"
+                    />
+                    <button
+                      onClick={handleSaveHostUrl}
+                      className="px-4 py-2.5 bg-blue-600 hover:bg-blue-700 text-white rounded-xl text-xs font-semibold transition shrink-0"
+                    >
+                      Update
+                    </button>
+                  </div>
+                </div>
+              </div>
+
+              {/* Network Chips */}
+              <div className="mt-5 pt-4 border-t border-slate-50 flex items-center justify-between flex-wrap gap-2 text-xs">
+                <div className="flex items-center gap-2 text-slate-500">
+                  <Wifi className="w-3.5 h-3.5 text-blue-600" />
+                  <span>Primary LAN IP: <strong className="font-mono text-slate-700">{pairingData?.payload?.ip || '10.89.213.60'}</strong></span>
+                </div>
+                <div className="flex items-center gap-2 text-slate-500">
+                  <Radio className="w-3.5 h-3.5 text-emerald-600" />
+                  <span>Transfer Engine: <strong className="text-emerald-700">Direct Socket Stream (Zero Cloud)</strong></span>
+                </div>
+              </div>
+            </div>
+
+            {/* Section 2: Received Files Storage Directory */}
+            <div className="bg-white rounded-[24px] p-6 shadow-card border border-slate-100">
+              <div className="flex items-center gap-3 mb-4">
+                <div className="w-10 h-10 rounded-xl bg-blue-50 text-blue-600 flex items-center justify-center border border-blue-100">
+                  <Folder className="w-5 h-5" />
+                </div>
+                <div>
+                  <h3 className="text-base font-bold text-slate-800">Received Files Save Location</h3>
+                  <p className="text-xs text-slate-400">Incoming files received from mobile devices will be saved directly to this path</p>
+                </div>
+              </div>
+
+              <div className="flex flex-col sm:flex-row items-stretch sm:items-center gap-2 mb-3">
+                <input
+                  type="text"
+                  value={savePath}
+                  onChange={(e) => setSavePath(e.target.value)}
+                  placeholder="C:\Users\Public\Downloads\TitanPlusShare"
+                  className="flex-1 px-4 py-2.5 bg-slate-50 border border-slate-200 rounded-xl text-xs font-mono text-slate-800 outline-none focus:ring-2 focus:ring-blue-500/30"
+                />
+                <button
+                  onClick={handleSavePath}
+                  className="px-5 py-2.5 bg-blue-600 hover:bg-blue-700 text-white rounded-xl text-xs font-semibold transition shrink-0 flex items-center justify-center gap-1.5 shadow-sm"
+                >
+                  {savedPath ? <Check className="w-4 h-4" /> : 'Save Location'}
+                </button>
+              </div>
+
+              <div className="flex items-center gap-2 flex-wrap">
+                <span className="text-xs font-semibold text-slate-400 mr-1">Quick Presets:</span>
+                <button
+                  onClick={() => setSavePath('C:\\Users\\Public\\Downloads\\TitanPlusShare')}
+                  className="px-3 py-1.5 bg-slate-100 hover:bg-slate-200 text-slate-700 rounded-xl text-xs font-medium transition"
+                >
+                  Public Downloads
+                </button>
+                <button
+                  onClick={() => setSavePath('Desktop\\TitanPlusShare')}
+                  className="px-3 py-1.5 bg-slate-100 hover:bg-slate-200 text-slate-700 rounded-xl text-xs font-medium transition"
+                >
+                  Desktop
+                </button>
+              </div>
+            </div>
+
+            {/* Section 3: Paired Devices List (Spacious Desktop View) */}
+            <div className="bg-white rounded-[24px] p-6 shadow-card border border-slate-100">
+              <div className="flex items-center justify-between mb-4">
+                <div className="flex items-center gap-3">
+                  <div className="w-10 h-10 rounded-xl bg-blue-50 text-blue-600 flex items-center justify-center border border-blue-100">
+                    <Smartphone className="w-5 h-5" />
+                  </div>
+                  <div>
+                    <h3 className="text-base font-bold text-slate-800">Paired Mobile Devices</h3>
+                    <p className="text-xs text-slate-400">Smartphones authorized for 1-click instant direct file transfers</p>
+                  </div>
+                </div>
+                <span className="px-3 py-1 bg-slate-100 text-slate-700 rounded-full text-xs font-bold">
+                  {pairedDevices.length} Connected
+                </span>
+              </div>
+
+              {pairedDevices.length === 0 ? (
+                <div className="p-8 bg-slate-50/70 rounded-2xl border border-dashed border-slate-200 text-center">
+                  <Smartphone className="w-10 h-10 text-slate-300 mx-auto mb-2" />
+                  <h4 className="font-bold text-slate-700 text-sm mb-1">No Mobile Devices Paired Yet</h4>
+                  <p className="text-xs text-slate-400 max-w-sm mx-auto">
+                    Scan the QR code on the right side using the Titan Plus Share mobile app to pair your phone.
+                  </p>
+                </div>
+              ) : (
+                <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
+                  {pairedDevices.map((d) => (
+                    <div key={d.deviceId} className="p-4 bg-slate-50/80 hover:bg-blue-50/30 rounded-2xl border border-slate-100 transition flex items-center justify-between">
+                      <div className="flex items-center gap-3">
+                        <div className="w-10 h-10 rounded-xl bg-white text-blue-600 flex items-center justify-center border border-slate-200 shadow-sm">
+                          <Smartphone className="w-5 h-5" />
+                        </div>
+                        <div>
+                          <div className="font-bold text-slate-800 text-sm">{d.deviceName}</div>
+                          <div className="flex items-center gap-1.5 mt-0.5">
+                            <span className="w-1.5 h-1.5 rounded-full bg-emerald-500 animate-pulse" />
+                            <span className="text-xs text-emerald-600 font-medium font-mono">{d.ip || 'LAN Connected'}</span>
+                          </div>
+                        </div>
+                      </div>
+                      <button
+                        onClick={() => handleRemoveDevice(d.deviceId)}
+                        className="p-2.5 text-slate-400 hover:text-rose-500 hover:bg-white rounded-xl border border-transparent hover:border-slate-200 transition"
+                        title="Unpair Device"
+                      >
+                        <Trash2 className="w-4 h-4" />
+                      </button>
+                    </div>
+                  ))}
+                </div>
+              )}
+            </div>
+
+          </div>
+
+          {/* RIGHT COLUMN: 4 COLS (HERO PAIRING QR CODE & SYSTEM INFO) */}
+          <div className="lg:col-span-4 space-y-6">
+
+            {/* Hero Pairing QR Card */}
+            <div className="bg-white rounded-[24px] p-6 shadow-card border border-slate-100 text-center">
+              <div className="inline-flex items-center gap-1.5 px-3 py-1 bg-blue-50 text-blue-700 rounded-full text-xs font-bold mb-4">
+                <QrCode className="w-3.5 h-3.5" />
+                <span>Mobile Pairing QR</span>
+              </div>
+
+              <h3 className="font-bold text-slate-800 text-base mb-1">Pair with Phone</h3>
+              <p className="text-xs text-slate-400 mb-5">
+                Open Titan Plus Share on your phone and scan this code to link
+              </p>
+
+              {pairingData?.qrCode ? (
+                <div className="p-4 bg-slate-50 rounded-2xl border border-slate-100 inline-block mb-4 shadow-sm">
+                  <img src={pairingData.qrCode} alt="Laptop Pairing QR" className="w-48 h-48 mx-auto rounded-xl shadow-inner border border-slate-200 object-contain" />
+                </div>
+              ) : (
+                <div className="w-48 h-48 mx-auto bg-slate-50 rounded-2xl border border-slate-100 flex items-center justify-center mb-4">
+                  <RefreshCw className="w-8 h-8 animate-spin text-blue-600" />
+                </div>
+              )}
+
+              <div className="p-3 bg-slate-50 rounded-xl text-left border border-slate-100 mb-4">
+                <div className="text-[11px] font-semibold text-slate-400 mb-0.5">Host Server</div>
+                <div className="text-xs font-mono font-bold text-slate-800 truncate">
+                  {pairingData?.payload?.name} ({pairingData?.payload?.ip}:{pairingData?.payload?.port || 51733})
+                </div>
+              </div>
+
+              <div className="text-left space-y-2 text-xs text-slate-500">
+                <div className="flex items-start gap-2">
+                  <span className="w-5 h-5 rounded-full bg-blue-100 text-blue-700 font-bold flex items-center justify-center text-[10px] shrink-0 mt-0.5">1</span>
+                  <span>Connect both Laptop & Phone to same Wi-Fi or Mobile Hotspot</span>
+                </div>
+                <div className="flex items-start gap-2">
+                  <span className="w-5 h-5 rounded-full bg-blue-100 text-blue-700 font-bold flex items-center justify-center text-[10px] shrink-0 mt-0.5">2</span>
+                  <span>Open Titan Plus Share on your Android phone</span>
+                </div>
+                <div className="flex items-start gap-2">
+                  <span className="w-5 h-5 rounded-full bg-blue-100 text-blue-700 font-bold flex items-center justify-center text-[10px] shrink-0 mt-0.5">3</span>
+                  <span>Tap "Pair Device" and point camera at this QR code</span>
+                </div>
+              </div>
+            </div>
+
+            {/* About & Eco Card */}
+            <div className="bg-white rounded-[24px] p-6 shadow-card border border-slate-100">
+              <div className="flex items-center gap-3 mb-4">
+                <img src="/logo.png" alt="Titan Plus Share" className="w-12 h-12 rounded-2xl object-cover shadow-sm" />
+                <div>
+                  <h4 className="font-bold text-slate-900 text-base leading-tight">Titan Plus Share</h4>
+                  <p className="text-xs text-slate-400">Fast • Simple • Anywhere</p>
+                  <span className="inline-block mt-1 text-[10px] font-bold px-2 py-0.5 bg-emerald-50 text-emerald-700 rounded-md border border-emerald-200">
+                    Version 1.0.0
+                  </span>
+                </div>
+              </div>
+
+              <div className="pt-3 border-t border-slate-100 space-y-2 text-xs text-slate-600">
+                <div className="flex items-center justify-between">
+                  <span className="text-slate-400">Architecture</span>
+                  <span className="font-semibold">Local Node Engine + React</span>
+                </div>
+                <div className="flex items-center justify-between">
+                  <span className="text-slate-400">Security</span>
+                  <span className="font-semibold text-emerald-600">Zero Cloud • Direct LAN</span>
+                </div>
+                <div className="flex items-center justify-between">
+                  <span className="text-slate-400">Status</span>
+                  <span className="font-semibold text-blue-600">All Services Operational</span>
+                </div>
+              </div>
+            </div>
+
+          </div>
+
+        </div>
+      </div>
+    );
+  }
+
+  // ==========================================
+  // MOBILE APK LAYOUT (isMobileMode)
+  // ==========================================
   return (
     <div className="w-full max-w-xl mx-auto px-2 sm:px-4 py-3 sm:py-6 space-y-4 animate-fadeIn overflow-x-hidden pb-24 sm:pb-8">
       
@@ -360,7 +666,7 @@ export default function SettingsView({ isMobileMode, onNavigate }) {
         </div>
       </div>
 
-      {/* Save Location Configuration (For Mobile & PC) */}
+      {/* Save Location Configuration (For Mobile) */}
       <div className="bg-white rounded-[22px] p-4 sm:p-5 shadow-card border border-slate-100">
         <div className="flex items-center gap-2.5 mb-2 min-w-0">
           <div className="w-8 h-8 rounded-lg bg-blue-50 text-blue-600 flex items-center justify-center border border-blue-100 shrink-0">
@@ -377,7 +683,7 @@ export default function SettingsView({ isMobileMode, onNavigate }) {
             type="text"
             value={savePath}
             onChange={(e) => setSavePath(e.target.value)}
-            placeholder={isMobileMode ? "/storage/emulated/0/Download/TitanPlusShare" : "C:\\Users\\Public\\Downloads\\TitanPlusShare"}
+            placeholder="/storage/emulated/0/Download/TitanPlusShare"
             className="flex-1 min-w-0 px-3.5 py-2.5 bg-slate-50 border border-slate-200 rounded-xl text-xs font-mono text-slate-800 outline-none focus:ring-2 focus:ring-blue-500/30"
           />
           <button
@@ -391,19 +697,11 @@ export default function SettingsView({ isMobileMode, onNavigate }) {
         <div className="flex items-center gap-2 flex-wrap">
           <span className="text-[11px] text-slate-400">Presets:</span>
           <button 
-            onClick={() => setSavePath(isMobileMode ? '/storage/emulated/0/Download/TitanPlusShare' : 'C:\\Users\\Public\\Downloads\\TitanPlusShare')}
+            onClick={() => setSavePath('/storage/emulated/0/Download/TitanPlusShare')}
             className="px-2.5 py-1 bg-slate-100 hover:bg-slate-200 text-slate-600 rounded-lg text-[10px] font-medium transition"
           >
             Downloads Folder
           </button>
-          {!isMobileMode && (
-            <button 
-              onClick={() => setSavePath('Desktop\\TitanPlusShare')}
-              className="px-2.5 py-1 bg-slate-100 hover:bg-slate-200 text-slate-600 rounded-lg text-[10px] font-medium transition"
-            >
-              Desktop
-            </button>
-          )}
         </div>
       </div>
 
@@ -473,18 +771,6 @@ export default function SettingsView({ isMobileMode, onNavigate }) {
               <span>{scanResult}</span>
             </div>
           )}
-
-          {/* Option for Laptop: Display QR */}
-          {pairingData?.qrCode && (
-            <div className="p-4 bg-slate-50 rounded-2xl border border-slate-100 text-center">
-              <h4 className="font-semibold text-slate-800 text-xs mb-1">Laptop Pairing QR Code</h4>
-              <p className="text-[11px] text-slate-400 mb-3">Scan this code from your mobile app to link devices</p>
-              <img src={pairingData.qrCode} alt="Pairing QR" className="w-44 h-44 mx-auto rounded-xl shadow-sm border border-slate-200" />
-              <p className="text-[11px] text-slate-500 font-mono mt-2">
-                Host: {pairingData.payload?.name} ({pairingData.payload?.ip}:{pairingData.payload?.port})
-              </p>
-            </div>
-          )}
         </div>
 
         {/* Paired Devices List */}
@@ -519,7 +805,6 @@ export default function SettingsView({ isMobileMode, onNavigate }) {
         </div>
 
       </div>
-
 
       {/* About Box */}
       <div className="bg-white rounded-[22px] p-5 shadow-card border border-slate-100 flex items-center justify-between">
