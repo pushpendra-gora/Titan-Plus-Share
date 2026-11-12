@@ -4,7 +4,7 @@ import { X, Image, Video } from 'lucide-react';
 export default function MediaModal({ onClose, onSelectType }) {
   return (
     <div className="fixed inset-0 z-50 flex items-end sm:items-center justify-center p-0 sm:p-4 bg-slate-900/40 backdrop-blur-sm animate-fadeIn">
-      <div className="w-full sm:max-w-md bg-white rounded-t-[28px] sm:rounded-[26px] p-6 shadow-modal border border-slate-100">
+      <div className="w-full sm:max-w-md bg-white rounded-t-[28px] sm:rounded-[26px] p-4 sm:p-6 shadow-modal border border-slate-100 pb-[max(20px,env(safe-area-inset-bottom))] sm:pb-6">
         <div className="flex items-center justify-between mb-5">
           <h3 className="font-semibold text-slate-800 text-base">Select Media Type</h3>
           <button 

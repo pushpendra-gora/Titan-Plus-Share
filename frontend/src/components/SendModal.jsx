@@ -232,10 +232,10 @@ export default function SendModal({ item, onClose, onStartTransfer }) {
 
   return (
     <div className="fixed inset-0 z-50 flex items-end sm:items-center justify-center p-0 sm:p-4 bg-slate-900/40 backdrop-blur-sm animate-fadeIn">
-      <div className="w-full sm:max-w-md bg-white rounded-t-[28px] sm:rounded-[26px] p-6 shadow-modal border border-slate-100 max-h-[90vh] overflow-y-auto">
+      <div className="w-full sm:max-w-md bg-white rounded-t-[28px] sm:rounded-[26px] p-4 sm:p-6 shadow-modal border border-slate-100 max-h-[90vh] overflow-y-auto pb-[max(20px,env(safe-area-inset-bottom))] sm:pb-6">
         
         {/* Selected Content Card */}
-        <div className="flex items-center justify-between p-3.5 bg-slate-50/90 rounded-2xl border border-slate-100 mb-5">
+        <div className="flex items-center justify-between p-3.5 bg-slate-50/90 rounded-2xl border border-slate-100 mb-4 sm:mb-5">
           <div className="flex items-center gap-3 min-w-0">
             <div className="w-12 h-12 rounded-xl bg-blue-50 text-blue-600 flex items-center justify-center font-bold text-xs tracking-wider shrink-0 border border-blue-100">
               {getItemBadge()}
@@ -432,9 +432,9 @@ export default function SendModal({ item, onClose, onStartTransfer }) {
 
             {/* Display QR code for other device to scan */}
             {pairingData?.qrCode ? (
-              <div className="p-4 bg-slate-50 rounded-2xl border border-slate-100 inline-block mb-3">
-                <img src={pairingData.qrCode} alt="Pairing QR" className="w-44 h-44 rounded-xl mx-auto shadow-sm border border-slate-200" />
-                <p className="text-[11px] text-slate-500 mt-2 font-medium">
+              <div className="p-3.5 sm:p-4 bg-slate-50 rounded-2xl border border-slate-100 inline-block mb-3 max-w-full overflow-hidden">
+                <img src={pairingData.qrCode} alt="Pairing QR" className="w-36 sm:w-44 h-36 sm:h-44 max-w-full rounded-xl mx-auto shadow-sm border border-slate-200 object-contain" />
+                <p className="text-[11px] text-slate-500 mt-2 font-medium truncate">
                   {pairingData.payload?.name} ({pairingData.payload?.ip})
                 </p>
                 <p className="text-[10px] text-slate-400 mt-0.5">
@@ -468,13 +468,13 @@ export default function SendModal({ item, onClose, onStartTransfer }) {
             </div>
 
             {/* Link Box */}
-            <div className="flex items-center gap-2 p-2.5 bg-slate-50 border border-slate-200 rounded-2xl mb-4">
+            <div className="flex items-center gap-1.5 sm:gap-2 p-2 sm:p-2.5 bg-slate-50 border border-slate-200 rounded-2xl mb-4 min-w-0">
               <LinkIcon className="w-4 h-4 text-blue-600 shrink-0 ml-1" />
               <input 
                 type="text" 
                 readOnly 
                 value={linkData.url}
-                className="bg-transparent text-xs text-slate-700 font-medium flex-1 outline-none truncate"
+                className="bg-transparent text-xs text-slate-700 font-medium flex-1 outline-none truncate min-w-0"
               />
               <button
                 onClick={handleCopy}
@@ -486,17 +486,17 @@ export default function SendModal({ item, onClose, onStartTransfer }) {
               <button
                 onClick={() => setShowQr(!showQr)}
                 title="Show QR Code"
-                className="p-2 rounded-xl bg-blue-600 hover:bg-blue-700 text-white transition shrink-0 flex items-center gap-1 text-xs font-semibold shadow-sm"
+                className="p-2 sm:px-3 sm:py-2 rounded-xl bg-blue-600 hover:bg-blue-700 text-white transition shrink-0 flex items-center gap-1 text-xs font-semibold shadow-sm"
               >
                 <QrCode className="w-4 h-4" />
-                <span>QR</span>
+                <span className="hidden sm:inline">QR</span>
               </button>
             </div>
 
             {/* QR Code expansion */}
             {showQr && (
-              <div className="p-4 bg-slate-50 rounded-2xl border border-slate-100 inline-block mb-4 animate-fadeIn">
-                <img src={linkData.qrCode} alt="Download QR Code" className="w-44 h-44 rounded-lg mx-auto" />
+              <div className="p-3.5 sm:p-4 bg-slate-50 rounded-2xl border border-slate-100 inline-block mb-4 animate-fadeIn max-w-full overflow-hidden">
+                <img src={linkData.qrCode} alt="Download QR Code" className="w-36 sm:w-44 h-36 sm:h-44 max-w-full rounded-lg mx-auto object-contain" />
                 <p className="text-[11px] text-slate-400 mt-2">Scan with camera to download on any device</p>
               </div>
             )}

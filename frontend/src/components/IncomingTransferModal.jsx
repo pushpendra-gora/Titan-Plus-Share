@@ -182,8 +182,8 @@ export default function IncomingTransferModal({ incoming, onClose }) {
   };
 
   return (
-    <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-slate-900/50 backdrop-blur-sm animate-fadeIn">
-      <div className="w-full max-w-md bg-white rounded-[26px] p-6 shadow-modal border border-slate-100 text-center relative overflow-hidden">
+    <div className="fixed inset-0 z-50 flex items-center justify-center p-3 sm:p-4 bg-slate-900/50 backdrop-blur-sm animate-fadeIn">
+      <div className="w-full max-w-sm sm:max-w-md bg-white rounded-[26px] p-4 sm:p-6 shadow-modal border border-slate-100 text-center relative overflow-hidden">
         
         {/* Top Notification Badge */}
         <div className="inline-flex items-center gap-1.5 px-3 py-1 bg-blue-50 text-blue-700 text-xs font-semibold rounded-full mb-4 border border-blue-100">

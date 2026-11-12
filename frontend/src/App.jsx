@@ -475,75 +475,75 @@ export default function App() {
         </div>
       ) : (
         /* MOBILE VIEW */
-        <div className="flex-1 flex flex-col justify-between max-w-md mx-auto w-full min-h-screen z-10 px-4 pt-4 pb-20">
+        <div className="mobile-safe-container flex-1 flex flex-col justify-between max-w-md mx-auto w-full min-h-screen z-10">
           
           {/* Mobile Top Header */}
-          <div className="flex items-center justify-between mb-8 pt-2">
-            <div className="flex items-center gap-3">
-              <img src="/logo.png" alt="Titan Plus Share" className="w-11 h-11 rounded-2xl shadow-md shadow-blue-500/25 object-cover" />
-              <div>
-                <h1 className="font-bold text-slate-900 text-base leading-tight">Titan Plus Share</h1>
-                <p className="text-xs text-slate-400 font-medium">Fast • Simple • Anywhere</p>
+          <div className="flex items-center justify-between mb-6 pt-1">
+            <div className="flex items-center gap-3 min-w-0">
+              <img src="/logo.png" alt="Titan Plus Share" className="w-10 h-10 sm:w-11 sm:h-11 rounded-2xl shadow-md shadow-blue-500/25 object-cover shrink-0" />
+              <div className="min-w-0">
+                <h1 className="font-bold text-slate-900 text-sm sm:text-base leading-tight truncate">Titan Plus Share</h1>
+                <p className="text-[11px] sm:text-xs text-slate-400 font-medium truncate">Fast • Simple • Anywhere</p>
               </div>
             </div>
 
             <button
               onClick={() => setActiveTab('settings')}
-              className="w-10 h-10 rounded-2xl bg-white border border-slate-100 shadow-sm flex items-center justify-center text-slate-500 hover:text-blue-600 transition"
+              className="w-10 h-10 rounded-2xl bg-white border border-slate-100 shadow-sm flex items-center justify-center text-slate-500 hover:text-blue-600 transition shrink-0"
             >
               <SettingsIcon className="w-5 h-5" />
             </button>
           </div>
 
           {/* Mobile Tab Content */}
-          <div className="flex-1 flex flex-col justify-center">
+          <div className="flex-1 flex flex-col justify-center w-full min-w-0">
             {activeTab === 'home' && (
-              <div className="animate-fadeIn my-auto">
+              <div className="animate-fadeIn my-auto w-full">
                 {/* 2x2 Grid of White Cards */}
-                <div className="grid grid-cols-2 gap-4">
+                <div className="grid grid-cols-2 gap-3 sm:gap-4">
                   
                   {/* Card 1: File */}
                   <button
                     onClick={() => fileInputRef.current?.click()}
-                    className="aspect-square bg-white hover:bg-slate-50/60 p-6 rounded-[24px] border border-slate-100 shadow-card flex flex-col items-center justify-center gap-3.5 transition-all active:scale-95"
+                    className="aspect-square bg-white hover:bg-slate-50/60 p-4 sm:p-6 rounded-[22px] border border-slate-100 shadow-card flex flex-col items-center justify-center gap-2.5 sm:gap-3.5 transition-all active:scale-95"
                   >
-                    <div className="w-12 h-12 rounded-2xl bg-blue-50 text-blue-600 flex items-center justify-center border border-blue-100">
-                      <FileText className="w-6 h-6" />
+                    <div className="w-11 h-11 sm:w-12 sm:h-12 rounded-2xl bg-blue-50 text-blue-600 flex items-center justify-center border border-blue-100">
+                      <FileText className="w-5 h-5 sm:w-6 sm:h-6" />
                     </div>
-                    <span className="font-bold text-slate-800 text-sm">File</span>
+                    <span className="font-bold text-slate-800 text-xs sm:text-sm">File</span>
                   </button>
 
                   {/* Card 2: Media */}
                   <button
                     onClick={() => setShowMediaModal(true)}
-                    className="aspect-square bg-white hover:bg-slate-50/60 p-6 rounded-[24px] border border-slate-100 shadow-card flex flex-col items-center justify-center gap-3.5 transition-all active:scale-95"
+                    className="aspect-square bg-white hover:bg-slate-50/60 p-4 sm:p-6 rounded-[22px] border border-slate-100 shadow-card flex flex-col items-center justify-center gap-2.5 sm:gap-3.5 transition-all active:scale-95"
                   >
-                    <div className="w-12 h-12 rounded-2xl bg-blue-50 text-blue-600 flex items-center justify-center border border-blue-100">
-                      <Image className="w-6 h-6" />
+                    <div className="w-11 h-11 sm:w-12 sm:h-12 rounded-2xl bg-blue-50 text-blue-600 flex items-center justify-center border border-blue-100">
+                      <Image className="w-5 h-5 sm:w-6 sm:h-6" />
                     </div>
-                    <span className="font-bold text-slate-800 text-sm">Media</span>
+                    <span className="font-bold text-slate-800 text-xs sm:text-sm">Media</span>
                   </button>
 
                   {/* Card 3: Text */}
                   <button
                     onClick={() => setShowTextModal(true)}
-                    className="aspect-square bg-white hover:bg-slate-50/60 p-6 rounded-[24px] border border-slate-100 shadow-card flex flex-col items-center justify-center gap-3.5 transition-all active:scale-95"
+                    className="aspect-square bg-white hover:bg-slate-50/60 p-4 sm:p-6 rounded-[22px] border border-slate-100 shadow-card flex flex-col items-center justify-center gap-2.5 sm:gap-3.5 transition-all active:scale-95"
                   >
-                    <div className="w-12 h-12 rounded-2xl bg-blue-50 text-blue-600 flex items-center justify-center border border-blue-100">
-                      <AlignLeft className="w-6 h-6" />
+                    <div className="w-11 h-11 sm:w-12 sm:h-12 rounded-2xl bg-blue-50 text-blue-600 flex items-center justify-center border border-blue-100">
+                      <AlignLeft className="w-5 h-5 sm:w-6 sm:h-6" />
                     </div>
-                    <span className="font-bold text-slate-800 text-sm">Text</span>
+                    <span className="font-bold text-slate-800 text-xs sm:text-sm">Text</span>
                   </button>
 
                   {/* Card 4: Folder */}
                   <button
                     onClick={() => folderInputRef.current?.click()}
-                    className="aspect-square bg-white hover:bg-slate-50/60 p-6 rounded-[24px] border border-slate-100 shadow-card flex flex-col items-center justify-center gap-3.5 transition-all active:scale-95"
+                    className="aspect-square bg-white hover:bg-slate-50/60 p-4 sm:p-6 rounded-[22px] border border-slate-100 shadow-card flex flex-col items-center justify-center gap-2.5 sm:gap-3.5 transition-all active:scale-95"
                   >
-                    <div className="w-12 h-12 rounded-2xl bg-blue-50 text-blue-600 flex items-center justify-center border border-blue-100">
-                      <Folder className="w-6 h-6" />
+                    <div className="w-11 h-11 sm:w-12 sm:h-12 rounded-2xl bg-blue-50 text-blue-600 flex items-center justify-center border border-blue-100">
+                      <Folder className="w-5 h-5 sm:w-6 sm:h-6" />
                     </div>
-                    <span className="font-bold text-slate-800 text-sm">Folder</span>
+                    <span className="font-bold text-slate-800 text-xs sm:text-sm">Folder</span>
                   </button>
 
                 </div>
@@ -555,7 +555,7 @@ export default function App() {
           </div>
 
           {/* Mobile Bottom Navigation Bar */}
-          <div className="fixed bottom-0 left-0 right-0 max-w-md mx-auto p-4 z-40">
+          <div className="mobile-bottom-nav fixed bottom-0 left-0 right-0 max-w-md mx-auto z-40">
             <div className="bg-white/95 backdrop-blur-md rounded-[22px] border border-slate-100 shadow-modal p-1.5 flex items-center justify-around">
               
               <button

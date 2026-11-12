@@ -208,18 +208,18 @@ export default function TransferProgressModal({ targetDevice, item, onClose }) {
   };
 
   return (
-    <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-slate-900/40 backdrop-blur-sm animate-fadeIn">
-      <div className="w-full max-w-md bg-white rounded-[26px] p-6 shadow-modal border border-slate-100 text-center">
+    <div className="fixed inset-0 z-50 flex items-center justify-center p-3 sm:p-4 bg-slate-900/40 backdrop-blur-sm animate-fadeIn">
+      <div className="w-full max-w-sm sm:max-w-md bg-white rounded-[26px] p-4 sm:p-6 shadow-modal border border-slate-100 text-center overflow-hidden">
         
         {/* Device Header */}
-        <div className="flex items-center justify-between mb-5">
-          <div className="flex items-center gap-2.5">
-            <div className="w-9 h-9 rounded-xl bg-blue-50 text-blue-600 flex items-center justify-center border border-blue-100">
+        <div className="flex items-center justify-between mb-4 sm:mb-5 min-w-0">
+          <div className="flex items-center gap-2.5 min-w-0">
+            <div className="w-9 h-9 rounded-xl bg-blue-50 text-blue-600 flex items-center justify-center border border-blue-100 shrink-0">
               {targetDevice.deviceType === 'laptop' ? <Laptop className="w-4 h-4" /> : <Smartphone className="w-4 h-4" />}
             </div>
-            <div className="text-left">
-              <h4 className="text-sm font-semibold text-slate-800">{targetDevice.deviceName}</h4>
-              <p className="text-[11px] text-emerald-500 font-medium">Direct LAN Stream</p>
+            <div className="text-left min-w-0">
+              <h4 className="text-sm font-semibold text-slate-800 truncate">{targetDevice.deviceName}</h4>
+              <p className="text-[11px] text-emerald-500 font-medium truncate">Direct LAN Stream</p>
             </div>
           </div>
           {(isDone || error) && (

@@ -255,7 +255,7 @@ export default function SettingsView({ isMobileMode, onNavigate }) {
   };
 
   return (
-    <div className="max-w-2xl mx-auto px-4 py-6 space-y-6 animate-fadeIn pb-24 sm:pb-8">
+    <div className="w-full max-w-xl mx-auto px-2 sm:px-4 py-3 sm:py-6 space-y-4 animate-fadeIn overflow-x-hidden pb-24 sm:pb-8">
       
       {/* Hidden container for image decoding */}
       <div id="qr-image-decoder" className="hidden"></div>
@@ -269,23 +269,23 @@ export default function SettingsView({ isMobileMode, onNavigate }) {
 
       {/* Header */}
       <div>
-        <h2 className="text-xl font-bold text-slate-800">Settings</h2>
-        <p className="text-xs text-slate-500">Configure pairing, save location, and preferences</p>
+        <h2 className="text-lg sm:text-xl font-bold text-slate-800">Settings</h2>
+        <p className="text-[11px] sm:text-xs text-slate-500">Configure pairing, save location, and preferences</p>
       </div>
 
       {/* Device Profile Card */}
-      <div className="bg-white rounded-[22px] p-5 shadow-card border border-slate-100">
+      <div className="bg-white rounded-[22px] p-4 sm:p-5 shadow-card border border-slate-100">
         <h3 className="text-sm font-semibold text-slate-800 mb-3">Device Identity</h3>
         <div className="flex items-center gap-2">
           <input
             type="text"
             value={deviceName}
             onChange={(e) => setDevName(e.target.value)}
-            className="flex-1 px-4 py-2.5 bg-slate-50 border border-slate-200 rounded-xl text-sm font-semibold text-slate-800 outline-none focus:ring-2 focus:ring-blue-500/30 focus:border-blue-500"
+            className="flex-1 min-w-0 px-3.5 py-2.5 bg-slate-50 border border-slate-200 rounded-xl text-xs sm:text-sm font-semibold text-slate-800 outline-none focus:ring-2 focus:ring-blue-500/30 focus:border-blue-500"
           />
           <button
             onClick={handleSaveDeviceName}
-            className="px-4 py-2.5 bg-blue-600 hover:bg-blue-700 text-white rounded-xl text-xs font-semibold transition"
+            className="px-4 py-2.5 bg-blue-600 hover:bg-blue-700 text-white rounded-xl text-xs font-semibold transition shrink-0"
           >
             {savedName ? <Check className="w-4 h-4" /> : 'Save'}
           </button>
@@ -293,36 +293,36 @@ export default function SettingsView({ isMobileMode, onNavigate }) {
       </div>
 
       {/* Host Laptop Server Connection Card */}
-      <div className="bg-white rounded-[22px] p-5 shadow-card border border-slate-100">
-        <div className="flex items-center justify-between mb-3">
-          <div className="flex items-center gap-2.5">
-            <div className="w-8 h-8 rounded-lg bg-blue-50 text-blue-600 flex items-center justify-center border border-blue-100">
+      <div className="bg-white rounded-[22px] p-4 sm:p-5 shadow-card border border-slate-100">
+        <div className="flex items-center justify-between mb-3 gap-2">
+          <div className="flex items-center gap-2.5 min-w-0">
+            <div className="w-8 h-8 rounded-lg bg-blue-50 text-blue-600 flex items-center justify-center border border-blue-100 shrink-0">
               <Server className="w-4 h-4" />
             </div>
-            <div>
-              <h3 className="text-sm font-semibold text-slate-800">Host Laptop Server</h3>
-              <p className="text-[11px] text-slate-400">Direct LAN / Hotspot IP of host laptop</p>
+            <div className="min-w-0">
+              <h3 className="text-xs sm:text-sm font-semibold text-slate-800 truncate">Host Laptop Server</h3>
+              <p className="text-[10px] sm:text-[11px] text-slate-400 truncate">Direct LAN / Hotspot IP of host laptop</p>
             </div>
           </div>
-          <span className={`inline-flex items-center gap-1.5 px-2.5 py-1 rounded-full text-[11px] font-bold ${
+          <span className={`inline-flex items-center gap-1.5 px-2.5 py-1 rounded-full text-[10px] sm:text-[11px] font-bold shrink-0 ${
             hostConnected ? 'bg-emerald-50 text-emerald-600 border border-emerald-200' : 'bg-amber-50 text-amber-600 border border-amber-200'
           }`}>
-            <span className={`w-2 h-2 rounded-full ${hostConnected ? 'bg-emerald-500' : 'bg-amber-500 animate-pulse'}`} />
+            <span className={`w-1.5 h-1.5 rounded-full ${hostConnected ? 'bg-emerald-500' : 'bg-amber-500 animate-pulse'}`} />
             {hostConnected ? 'Connected' : 'Offline'}
           </span>
         </div>
 
-        <div className="flex items-center gap-2 mb-3">
+        <div className="flex flex-col sm:flex-row items-stretch sm:items-center gap-2 mb-3">
           <input
             type="text"
             value={hostUrl}
             onChange={(e) => setHostUrl(e.target.value)}
             placeholder="http://10.89.213.60:51733"
-            className="flex-1 px-3.5 py-2.5 bg-slate-50 border border-slate-200 rounded-xl text-xs font-mono text-slate-800 outline-none focus:ring-2 focus:ring-blue-500/30 focus:border-blue-500"
+            className="flex-1 min-w-0 px-3.5 py-2.5 bg-slate-50 border border-slate-200 rounded-xl text-xs font-mono text-slate-800 outline-none focus:ring-2 focus:ring-blue-500/30 focus:border-blue-500"
           />
           <button
             onClick={handleSaveHostUrl}
-            className="px-4 py-2.5 bg-blue-600 hover:bg-blue-700 text-white rounded-xl text-xs font-semibold transition shrink-0"
+            className="px-5 py-2.5 bg-blue-600 hover:bg-blue-700 text-white rounded-xl text-xs font-semibold transition shrink-0 flex items-center justify-center"
           >
             Connect
           </button>
@@ -342,34 +342,34 @@ export default function SettingsView({ isMobileMode, onNavigate }) {
       </div>
 
       {/* Save Location Configuration (For Mobile & PC) */}
-      <div className="bg-white rounded-[22px] p-5 shadow-card border border-slate-100">
-        <div className="flex items-center gap-2.5 mb-2">
-          <div className="w-8 h-8 rounded-lg bg-blue-50 text-blue-600 flex items-center justify-center border border-blue-100">
+      <div className="bg-white rounded-[22px] p-4 sm:p-5 shadow-card border border-slate-100">
+        <div className="flex items-center gap-2.5 mb-2 min-w-0">
+          <div className="w-8 h-8 rounded-lg bg-blue-50 text-blue-600 flex items-center justify-center border border-blue-100 shrink-0">
             <Folder className="w-4 h-4" />
           </div>
-          <div>
-            <h3 className="text-sm font-semibold text-slate-800">Received Files Save Location</h3>
-            <p className="text-xs text-slate-500">All received transfers will be saved here automatically</p>
+          <div className="min-w-0">
+            <h3 className="text-xs sm:text-sm font-semibold text-slate-800 truncate">Received Files Save Location</h3>
+            <p className="text-[10px] sm:text-xs text-slate-500 truncate">Saved here automatically</p>
           </div>
         </div>
 
-        <div className="flex items-center gap-2 mb-3 mt-3">
+        <div className="flex flex-col sm:flex-row items-stretch sm:items-center gap-2 mb-3 mt-3">
           <input
             type="text"
             value={savePath}
             onChange={(e) => setSavePath(e.target.value)}
             placeholder={isMobileMode ? "/storage/emulated/0/Download/TitanPlusShare" : "C:\\Users\\Public\\Downloads\\TitanPlusShare"}
-            className="flex-1 px-3.5 py-2.5 bg-slate-50 border border-slate-200 rounded-xl text-xs font-mono text-slate-800 outline-none focus:ring-2 focus:ring-blue-500/30"
+            className="flex-1 min-w-0 px-3.5 py-2.5 bg-slate-50 border border-slate-200 rounded-xl text-xs font-mono text-slate-800 outline-none focus:ring-2 focus:ring-blue-500/30"
           />
           <button
             onClick={handleSavePath}
-            className="px-4 py-2.5 bg-blue-600 hover:bg-blue-700 text-white rounded-xl text-xs font-semibold transition shrink-0"
+            className="px-4 py-2.5 bg-blue-600 hover:bg-blue-700 text-white rounded-xl text-xs font-semibold transition shrink-0 flex items-center justify-center"
           >
             {savedPath ? <Check className="w-4 h-4" /> : 'Save Path'}
           </button>
         </div>
 
-        <div className="flex items-center gap-2">
+        <div className="flex items-center gap-2 flex-wrap">
           <span className="text-[11px] text-slate-400">Presets:</span>
           <button 
             onClick={() => setSavePath(isMobileMode ? '/storage/emulated/0/Download/TitanPlusShare' : 'C:\\Users\\Public\\Downloads\\TitanPlusShare')}
@@ -389,42 +389,42 @@ export default function SettingsView({ isMobileMode, onNavigate }) {
       </div>
 
       {/* One-Time QR Pairing Section */}
-      <div className="bg-white rounded-[22px] p-5 shadow-card border border-slate-100">
-        <div className="flex items-center justify-between mb-4">
+      <div className="bg-white rounded-[22px] p-4 sm:p-5 shadow-card border border-slate-100">
+        <div className="flex items-center justify-between mb-3">
           <div>
-            <h3 className="text-sm font-semibold text-slate-800">One-Time Device Pairing</h3>
-            <p className="text-xs text-slate-500">Pair your laptop & mobile once for instant auto-discovery</p>
+            <h3 className="text-xs sm:text-sm font-semibold text-slate-800">One-Time Device Pairing</h3>
+            <p className="text-[11px] sm:text-xs text-slate-500">Pair laptop & mobile for instant auto-discovery</p>
           </div>
         </div>
 
         {/* Pairing Actions */}
-        <div className="space-y-4">
-          <div className="p-4 bg-blue-50/60 rounded-2xl border border-blue-100/70 flex flex-col sm:flex-row items-center justify-between gap-3">
-            <div>
+        <div className="space-y-3">
+          <div className="p-3.5 sm:p-4 bg-blue-50/60 rounded-2xl border border-blue-100/70 flex flex-col sm:flex-row items-start sm:items-center justify-between gap-3">
+            <div className="min-w-0">
               <h4 className="font-semibold text-slate-800 text-xs sm:text-sm">Scan Laptop QR Code</h4>
-              <p className="text-xs text-slate-500">Use Camera or choose a photo of the QR code</p>
+              <p className="text-[11px] text-slate-500">Use Camera or choose photo</p>
             </div>
-            <div className="flex items-center gap-2">
+            <div className="grid grid-cols-2 gap-2 w-full sm:w-auto">
               <button
                 onClick={() => setScanning(!scanning)}
-                className="px-3.5 py-2.5 bg-blue-600 hover:bg-blue-700 text-white rounded-xl text-xs font-semibold flex items-center gap-1.5 transition shadow-sm"
+                className="px-3.5 py-2.5 bg-blue-600 hover:bg-blue-700 text-white rounded-xl text-xs font-semibold flex items-center justify-center gap-1.5 transition shadow-sm"
               >
                 <Camera className="w-4 h-4" />
-                <span>{scanning ? 'Close Camera' : 'Camera Scan'}</span>
+                <span>{scanning ? 'Close' : 'Camera'}</span>
               </button>
               <button
                 onClick={() => fileInputRef.current?.click()}
-                className="px-3 py-2.5 bg-white hover:bg-slate-100 text-slate-700 border border-slate-200 rounded-xl text-xs font-semibold flex items-center gap-1.5 transition shadow-sm"
+                className="px-3 py-2.5 bg-white hover:bg-slate-100 text-slate-700 border border-slate-200 rounded-xl text-xs font-semibold flex items-center justify-center gap-1.5 transition shadow-sm"
               >
                 <Image className="w-4 h-4 text-blue-600" />
-                <span>Choose Photo</span>
+                <span>Photo</span>
               </button>
             </div>
           </div>
 
           {scanning && (
-            <div className="p-4 bg-slate-50 rounded-2xl border border-slate-200">
-              <div id="qr-reader" className="w-full max-w-sm mx-auto overflow-hidden rounded-xl"></div>
+            <div className="p-3 sm:p-4 bg-slate-50 rounded-2xl border border-slate-200 overflow-hidden">
+              <div id="qr-reader" className="w-full max-w-[280px] mx-auto overflow-hidden rounded-xl"></div>
               <p className="text-[11px] text-slate-400 text-center mt-2">Point camera at the laptop pairing QR code</p>
             </div>
           )}
