@@ -71,7 +71,20 @@ public class MainActivity extends BridgeActivity {
             webView.setWebChromeClient(new WebChromeClient() {
                 @Override
                 public void onPermissionRequest(final PermissionRequest request) {
-                    runOnUiThread(() -> request.grant(request.getResources()));
+                    runOnUiThread(() -> {
+                        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.M) {
+                            if (ContextCompat.checkSelfPermission(MainActivity.this, Manifest.permission.CAMERA) != PackageManager.PERMISSION_GRANTED) {
+                                ActivityCompat.requestPermissions(MainActivity.this, new String[]{ Manifest.permission.CAMERA }, PERMISSION_REQ_CODE);
+                            }
+                        }
+                        request.grant(request.getResources());
+                    });
+                }
+
+                @Override
+                public boolean onConsoleMessage(android.webkit.ConsoleMessage consoleMessage) {
+                    android.util.Log.d("TitanWeb", consoleMessage.message() + " -- Line " + consoleMessage.lineNumber());
+                    return true;
                 }
             });
 

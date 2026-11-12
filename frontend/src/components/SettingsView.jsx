@@ -220,6 +220,9 @@ export default function SettingsView({ isMobileMode, onNavigate }) {
     }
   };
 
+  // Unique scanner DOM element ID
+  const settingsScannerDomId = useRef(`qr-reader-${Math.random().toString(36).substring(2, 7)}`);
+
   // Live Direct Camera Scanner (Instant Camera View - Zero intermediate dashboard)
   useEffect(() => {
     if (!scanning) return;
@@ -229,16 +232,29 @@ export default function SettingsView({ isMobileMode, onNavigate }) {
 
     const startDirectCamera = async () => {
       try {
-        qrCodeInstance = new Html5Qrcode('qr-reader');
+        const domId = settingsScannerDomId.current;
+        const targetEl = document.getElementById(domId);
+        if (!targetEl) return;
+
+        qrCodeInstance = new Html5Qrcode(domId);
         const config = {
           fps: 15,
-          qrbox: { width: 220, height: 220 },
-          aspectRatio: 1.0
+          qrbox: (viewfinderWidth, viewfinderHeight) => {
+            const minEdge = Math.min(viewfinderWidth, viewfinderHeight);
+            const boxSize = Math.max(50, Math.floor(minEdge * 0.72));
+            return { width: boxSize, height: boxSize };
+          }
         };
 
         const onScanSuccess = async (decodedText) => {
           if (isStopped) return;
           isStopped = true;
+          try {
+            if (qrCodeInstance && qrCodeInstance.isScanning) {
+              await qrCodeInstance.stop();
+            }
+          } catch (e) {}
+          setScanning(false);
           await processPairingPayload(decodedText);
         };
 
@@ -246,15 +262,30 @@ export default function SettingsView({ isMobileMode, onNavigate }) {
         try {
           await qrCodeInstance.start({ facingMode: "environment" }, config, onScanSuccess, () => {});
         } catch (camErr) {
-          // Fallback to front camera if back camera not available
-          await qrCodeInstance.start({ facingMode: "user" }, config, onScanSuccess, () => {});
+          try {
+            await qrCodeInstance.start({ facingMode: "user" }, config, onScanSuccess, () => {});
+          } catch (frontErr) {
+            try {
+              const cameras = await Html5Qrcode.getCameras();
+              if (cameras && cameras.length > 0) {
+                await qrCodeInstance.start(cameras[0].id, config, onScanSuccess, () => {});
+              } else {
+                throw new Error('No camera found');
+              }
+            } catch (allErr) {
+              setScanResult('Camera permission required. Please allow camera access in app settings.');
+              setScanning(false);
+            }
+          }
         }
       } catch (e) {
         console.warn('Settings camera direct start error:', e);
+        setScanResult('Could not open camera.');
+        setScanning(false);
       }
     };
 
-    const timer = setTimeout(startDirectCamera, 50);
+    const timer = setTimeout(startDirectCamera, 80);
 
     return () => {
       isStopped = true;
@@ -262,9 +293,11 @@ export default function SettingsView({ isMobileMode, onNavigate }) {
       if (qrCodeInstance) {
         try {
           if (qrCodeInstance.isScanning) {
-            qrCodeInstance.stop().then(() => qrCodeInstance.clear()).catch(() => {});
+            qrCodeInstance.stop().then(() => {
+              try { qrCodeInstance.clear(); } catch (e) {}
+            }).catch(() => {});
           } else {
-            qrCodeInstance.clear();
+            try { qrCodeInstance.clear(); } catch (e) {}
           }
         } catch (e) {}
       }
@@ -751,7 +784,7 @@ export default function SettingsView({ isMobileMode, onNavigate }) {
                 </button>
               </div>
               <div className="relative overflow-hidden rounded-2xl bg-black aspect-square max-w-[260px] mx-auto shadow-inner">
-                <div id="qr-reader" className="w-full h-full"></div>
+                <div id={settingsScannerDomId.current} className="w-full h-full min-h-[240px]"></div>
                 <div className="absolute inset-0 border-2 border-blue-500/40 rounded-2xl pointer-events-none flex items-center justify-center">
                   <div className="w-48 h-48 border border-white/40 rounded-xl relative">
                     <div className="absolute -top-0.5 -left-0.5 w-4 h-4 border-t-2 border-l-2 border-blue-500 rounded-tl"></div>

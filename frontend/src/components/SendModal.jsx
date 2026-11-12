@@ -121,6 +121,8 @@ export default function SendModal({ item, onClose, onStartTransfer }) {
     }
   };
 
+  const modalScannerDomId = useRef(`modal-qr-${Math.random().toString(36).substring(2, 7)}`);
+
   useEffect(() => {
     if (!scanning || view !== 'pairing') return;
 
@@ -129,16 +131,28 @@ export default function SendModal({ item, onClose, onStartTransfer }) {
 
     const startDirectCamera = async () => {
       try {
-        qrCodeInstance = new Html5Qrcode('modal-qr-reader');
+        const domId = modalScannerDomId.current;
+        const targetEl = document.getElementById(domId);
+        if (!targetEl) return;
+
+        qrCodeInstance = new Html5Qrcode(domId);
         const config = {
           fps: 15,
-          qrbox: { width: 220, height: 220 },
-          aspectRatio: 1.0
+          qrbox: (viewfinderWidth, viewfinderHeight) => {
+            const minEdge = Math.min(viewfinderWidth, viewfinderHeight);
+            const boxSize = Math.max(50, Math.floor(minEdge * 0.72));
+            return { width: boxSize, height: boxSize };
+          }
         };
 
         const onScanSuccess = async (decodedText) => {
           if (isStopped) return;
           isStopped = true;
+          try {
+            if (qrCodeInstance && qrCodeInstance.isScanning) {
+              await qrCodeInstance.stop();
+            }
+          } catch (e) {}
           setScanning(false);
           await processPairing(decodedText);
         };
@@ -147,14 +161,30 @@ export default function SendModal({ item, onClose, onStartTransfer }) {
         try {
           await qrCodeInstance.start({ facingMode: "environment" }, config, onScanSuccess, () => {});
         } catch (camErr) {
-          await qrCodeInstance.start({ facingMode: "user" }, config, onScanSuccess, () => {});
+          try {
+            await qrCodeInstance.start({ facingMode: "user" }, config, onScanSuccess, () => {});
+          } catch (frontErr) {
+            try {
+              const cameras = await Html5Qrcode.getCameras();
+              if (cameras && cameras.length > 0) {
+                await qrCodeInstance.start(cameras[0].id, config, onScanSuccess, () => {});
+              } else {
+                throw new Error('No camera found');
+              }
+            } catch (allErr) {
+              setScanMessage('Camera permission required. Please allow camera in app settings.');
+              setScanning(false);
+            }
+          }
         }
       } catch (e) {
         console.warn('Modal camera start error:', e);
+        setScanMessage('Could not open camera.');
+        setScanning(false);
       }
     };
 
-    const timer = setTimeout(startDirectCamera, 50);
+    const timer = setTimeout(startDirectCamera, 80);
 
     return () => {
       isStopped = true;
@@ -162,9 +192,11 @@ export default function SendModal({ item, onClose, onStartTransfer }) {
       if (qrCodeInstance) {
         try {
           if (qrCodeInstance.isScanning) {
-            qrCodeInstance.stop().then(() => qrCodeInstance.clear()).catch(() => {});
+            qrCodeInstance.stop().then(() => {
+              try { qrCodeInstance.clear(); } catch (e) {}
+            }).catch(() => {});
           } else {
-            qrCodeInstance.clear();
+            try { qrCodeInstance.clear(); } catch (e) {}
           }
         } catch (e) {}
       }
@@ -457,7 +489,7 @@ export default function SendModal({ item, onClose, onStartTransfer }) {
 
               {scanning && (
                 <div className="mt-3 relative overflow-hidden rounded-2xl bg-black aspect-square max-w-[260px] mx-auto shadow-inner">
-                  <div id="modal-qr-reader" className="w-full h-full"></div>
+                  <div id={modalScannerDomId.current} className="w-full h-full min-h-[240px]"></div>
                   {/* Viewfinder Aiming Overlay */}
                   <div className="absolute inset-0 border-2 border-blue-500/40 rounded-2xl pointer-events-none flex items-center justify-center">
                     <div className="w-48 h-48 border border-white/40 rounded-xl relative">

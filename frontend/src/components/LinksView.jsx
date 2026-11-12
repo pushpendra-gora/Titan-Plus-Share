@@ -172,6 +172,9 @@ export default function LinksView() {
     }
   };
 
+  // Unique scanner DOM element ID
+  const scannerDomId = useRef(`link-qr-reader-${Math.random().toString(36).substring(2, 7)}`);
+
   // Live Direct Camera QR Scanner for Link (Instant Camera View - Zero intermediate dashboard)
   useEffect(() => {
     if (!showScanner) return;
@@ -180,16 +183,28 @@ export default function LinksView() {
 
     const startDirectCamera = async () => {
       try {
-        qrCodeInstance = new Html5Qrcode('link-qr-reader');
+        const domId = scannerDomId.current;
+        const targetEl = document.getElementById(domId);
+        if (!targetEl) return;
+
+        qrCodeInstance = new Html5Qrcode(domId);
         const config = {
           fps: 15,
-          qrbox: { width: 220, height: 220 },
-          aspectRatio: 1.0
+          qrbox: (viewfinderWidth, viewfinderHeight) => {
+            const minEdge = Math.min(viewfinderWidth, viewfinderHeight);
+            const boxSize = Math.max(50, Math.floor(minEdge * 0.72));
+            return { width: boxSize, height: boxSize };
+          }
         };
 
-        const onScanSuccess = (decodedText) => {
+        const onScanSuccess = async (decodedText) => {
           if (isStopped) return;
           isStopped = true;
+          try {
+            if (qrCodeInstance && qrCodeInstance.isScanning) {
+              await qrCodeInstance.stop();
+            }
+          } catch (e) {}
           setUrlInput(decodedText.trim());
           setShowScanner(false);
           validateLink(decodedText.trim());
@@ -199,16 +214,32 @@ export default function LinksView() {
         try {
           await qrCodeInstance.start({ facingMode: "environment" }, config, onScanSuccess, () => {});
         } catch (camErr) {
-          // Fallback to front camera if back camera not available
-          await qrCodeInstance.start({ facingMode: "user" }, config, onScanSuccess, () => {});
+          try {
+            // Fallback to front camera if back camera not available
+            await qrCodeInstance.start({ facingMode: "user" }, config, onScanSuccess, () => {});
+          } catch (frontErr) {
+            try {
+              const cameras = await Html5Qrcode.getCameras();
+              if (cameras && cameras.length > 0) {
+                await qrCodeInstance.start(cameras[0].id, config, onScanSuccess, () => {});
+              } else {
+                throw new Error('No camera found');
+              }
+            } catch (allErr) {
+              setError('Camera permission required. Please allow camera access in app settings.');
+              setShowScanner(false);
+            }
+          }
         }
       } catch (e) {
         console.warn('Camera direct start error:', e);
+        setError('Could not start camera. Please verify camera permissions.');
+        setShowScanner(false);
       }
     };
 
     // Small delay to ensure DOM element is mounted
-    const timer = setTimeout(startDirectCamera, 50);
+    const timer = setTimeout(startDirectCamera, 80);
 
     return () => {
       isStopped = true;
@@ -216,9 +247,11 @@ export default function LinksView() {
       if (qrCodeInstance) {
         try {
           if (qrCodeInstance.isScanning) {
-            qrCodeInstance.stop().then(() => qrCodeInstance.clear()).catch(() => {});
+            qrCodeInstance.stop().then(() => {
+              try { qrCodeInstance.clear(); } catch (e) {}
+            }).catch(() => {});
           } else {
-            qrCodeInstance.clear();
+            try { qrCodeInstance.clear(); } catch (e) {}
           }
         } catch (e) {}
       }
@@ -391,7 +424,7 @@ export default function LinksView() {
             </button>
           </div>
           <div className="relative overflow-hidden rounded-2xl bg-black aspect-square max-w-[260px] mx-auto shadow-inner">
-            <div id="link-qr-reader" className="w-full h-full"></div>
+            <div id={scannerDomId.current} className="w-full h-full min-h-[240px]"></div>
             {/* Viewfinder Aiming Overlay */}
             <div className="absolute inset-0 border-2 border-blue-500/40 rounded-2xl pointer-events-none flex items-center justify-center">
               <div className="w-48 h-48 border border-white/40 rounded-xl relative">
