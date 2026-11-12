@@ -45,7 +45,7 @@ export const setServerUrl = (url) => {
   localStorage.setItem('titan_server_url', clean);
 };
 
-// Auto-discovery helper: probes known subnet / gateway candidates for active Titan server
+// Auto-discovery helper: probes known subnet / gateway candidates in parallel for lightning-fast discovery
 export async function autoDiscoverLaptopServer() {
   const candidates = [];
   
@@ -56,29 +56,36 @@ export async function autoDiscoverLaptopServer() {
   try {
     const paired = JSON.parse(localStorage.getItem('titan_local_paired') || '[]');
     for (const d of paired) {
-      if (d.ip && d.ip !== '127.0.0.1') candidates.push(`http://${d.ip}:${d.port || 51733}`);
+      if (d.ip && d.ip !== '127.0.0.1' && d.ip !== 'localhost') {
+        candidates.push(`http://${d.ip}:${d.port || 51733}`);
+      }
     }
   } catch (e) {}
 
   // 3. Common Android Hotspot Gateway & Subnet IP defaults
-  candidates.push('http://10.89.213.60:51733'); // User's active laptop IP
   candidates.push('http://192.168.43.1:51733'); // Android default hotspot gateway
   candidates.push('http://192.168.1.1:51733');
   candidates.push('http://192.168.0.1:51733');
+  candidates.push('http://10.89.213.60:51733');
 
-  const uniqueCandidates = [...new Set(candidates)];
-  for (const host of uniqueCandidates) {
-    try {
-      const res = await fetch(`${host}/api/status`, { signal: AbortSignal.timeout(1200) });
-      if (res.ok) {
-        const data = await res.json();
-        if (data.status === 'online') {
-          setServerUrl(host);
-          return host;
-        }
-      }
-    } catch (e) {}
-  }
+  const uniqueCandidates = [...new Set(candidates.filter(Boolean))];
+  
+  // Probe all candidates concurrently for instant discovery
+  const probe = async (host) => {
+    const res = await fetch(`${host}/api/status`, { signal: AbortSignal.timeout(1500) });
+    if (!res.ok) throw new Error('Not ok');
+    const data = await res.json();
+    if (data.status === 'online') return host;
+    throw new Error('Not online');
+  };
+
+  try {
+    const winner = await Promise.any(uniqueCandidates.map(c => probe(c)));
+    if (winner) {
+      setServerUrl(winner);
+      return winner;
+    }
+  } catch (e) {}
   return null;
 }
 

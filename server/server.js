@@ -71,6 +71,27 @@ function getLocalIpAddresses() {
   return combined.length > 0 ? combined : ['127.0.0.1'];
 }
 
+function escapeHtml(str) {
+  if (!str) return '';
+  return String(str)
+    .replace(/&/g, '&amp;')
+    .replace(/</g, '&lt;')
+    .replace(/>/g, '&gt;')
+    .replace(/"/g, '&quot;')
+    .replace(/'/g, '&#039;');
+}
+
+function sanitizeFileName(name) {
+  if (!name) return 'file_' + Date.now();
+  const base = path.basename(name);
+  return base.replace(/[^\w\.\-\s]/g, '_').substring(0, 220) || 'file.dat';
+}
+
+function isLocalRequest(req) {
+  const ip = req.ip || req.connection?.remoteAddress || '';
+  return ip === '127.0.0.1' || ip === '::1' || ip === '::ffff:127.0.0.1' || ip.endsWith('127.0.0.1');
+}
+
 function cleanupExpiredLinks() {
   const now = Date.now();
   const remaining = [];
@@ -89,6 +110,34 @@ function cleanupExpiredLinks() {
     sharedLinks = remaining;
     saveJson(LINKS_FILE, sharedLinks);
   }
+
+  // Prune stale pending pushes older than 1 hour
+  for (const [id, push] of Object.entries(pendingPushes)) {
+    if (now - (push.createdAt || 0) > 3600000) {
+      if (push.filePath && push.filePath.includes('uploads') && fs.existsSync(push.filePath)) {
+        try { fs.unlinkSync(push.filePath); } catch (e) {}
+      }
+      delete pendingPushes[id];
+    }
+  }
+
+  // Prune orphaned upload files older than 4 hours
+  try {
+    const files = fs.readdirSync(UPLOAD_DIR);
+    for (const f of files) {
+      const fullPath = path.join(UPLOAD_DIR, f);
+      try {
+        const stats = fs.statSync(fullPath);
+        if (now - stats.mtimeMs > 4 * 3600 * 1000) {
+          const isReferenced = sharedLinks.some(l => l.filePath === fullPath) || 
+                               Object.values(pendingPushes).some(p => p.filePath === fullPath);
+          if (!isReferenced) {
+            fs.unlinkSync(fullPath);
+          }
+        }
+      } catch (e) {}
+    }
+  } catch (e) {}
 }
 setInterval(cleanupExpiredLinks, 60 * 1000);
 
@@ -383,72 +432,91 @@ app.post('/api/links/create', upload.single('file'), async (req, res) => {
 app.post('/api/links/create-folder', upload.array('files'), async (req, res) => {
   try {
     const { folderName = 'Archive', creatorDeviceId, creatorDeviceName } = req.body;
+    const safeFolderName = sanitizeFileName(folderName);
     const token = crypto.randomBytes(6).toString('hex');
-    const zipPath = path.join(UPLOAD_DIR, `${Date.now()}-${folderName}.zip`);
+    const zipPath = path.join(UPLOAD_DIR, `${Date.now()}-${safeFolderName}.zip`);
     const output = fs.createWriteStream(zipPath);
     const archive = archiver('zip', { zlib: { level: 6 } });
 
-    archive.pipe(output);
+    await new Promise((resolve, reject) => {
+      output.on('close', resolve);
+      output.on('error', reject);
+      archive.on('error', reject);
+      archive.pipe(output);
 
-    const relativePaths = JSON.parse(req.body.relativePaths || '[]');
-    req.files.forEach((file, idx) => {
-      const rel = relativePaths[idx] || file.originalname;
-      archive.file(file.path, { name: rel });
+      let relativePaths = [];
+      try {
+        relativePaths = JSON.parse(req.body.relativePaths || '[]');
+      } catch (e) {}
+
+      if (req.files && req.files.length > 0) {
+        req.files.forEach((file, idx) => {
+          let rel = relativePaths[idx] || file.originalname;
+          // Zip slip protection: strip leading separators and parent path traversal
+          rel = rel.replace(/^(\.\.[\/\\])+/, '').replace(/^[\\\/]+/, '');
+          archive.file(file.path, { name: rel });
+        });
+      }
+
+      archive.finalize();
     });
 
-    await archive.finalize();
-
-    output.on('close', async () => {
-      // Remove raw parts
+    // Remove raw parts
+    if (req.files) {
       req.files.forEach((f) => {
         try { fs.unlinkSync(f.path); } catch (e) { }
       });
+    }
 
-      const now = Date.now();
-      const stats = fs.statSync(zipPath);
-      const linkEntry = {
-        id: token,
-        type: 'folder',
-        creatorDeviceId: creatorDeviceId || '',
-        creatorDeviceName: creatorDeviceName || 'Device',
-        fileName: `${folderName}.zip`,
-        filePath: zipPath,
-        fileSize: stats.size,
-        mimeType: 'application/zip',
-        createdAt: now,
-        expiresAt: now + LINK_EXPIRY_MS,
-        downloadCount: 0
-      };
+    const now = Date.now();
+    const stats = fs.statSync(zipPath);
+    const linkEntry = {
+      id: token,
+      type: 'folder',
+      creatorDeviceId: creatorDeviceId || '',
+      creatorDeviceName: creatorDeviceName || 'Device',
+      fileName: `${safeFolderName}.zip`,
+      filePath: zipPath,
+      fileSize: stats.size,
+      mimeType: 'application/zip',
+      createdAt: now,
+      expiresAt: now + LINK_EXPIRY_MS,
+      downloadCount: 0
+    };
 
-      const primaryIp = getLocalIpAddresses()[0];
-      const fullUrl = await registerWithVercel(linkEntry, token);
-      const localUrl = `http://${primaryIp}:${PORT}/d/${token}`;
-      const qrDataUrl = await QRCode.toDataURL(fullUrl, { margin: 1, width: 220 });
+    const primaryIp = getLocalIpAddresses()[0];
+    const fullUrl = await registerWithVercel(linkEntry, token);
+    const localUrl = `http://${primaryIp}:${PORT}/d/${token}`;
+    const qrDataUrl = await QRCode.toDataURL(fullUrl, { margin: 1, width: 220 });
 
-      linkEntry.url = fullUrl;
-      linkEntry.localUrl = localUrl;
-      linkEntry.qrCode = qrDataUrl;
-      linkEntry.status = 'pending';
-      linkEntry.downloadProgress = 0;
+    linkEntry.url = fullUrl;
+    linkEntry.localUrl = localUrl;
+    linkEntry.qrCode = qrDataUrl;
+    linkEntry.status = 'pending';
+    linkEntry.downloadProgress = 0;
 
-      sharedLinks.push(linkEntry);
-      saveJson(LINKS_FILE, sharedLinks);
-      broadcastWs('links-updated', sharedLinks);
+    sharedLinks.push(linkEntry);
+    saveJson(LINKS_FILE, sharedLinks);
+    broadcastWs('links-updated', sharedLinks);
 
-      res.json({
-        success: true,
-        token,
-        url: fullUrl,
-        localUrl,
-        qrCode: qrDataUrl,
-        fileName: linkEntry.fileName,
-        fileSize: linkEntry.fileSize,
-        expiresAt: linkEntry.expiresAt,
-        expiresInHours: 3
-      });
+    res.json({
+      success: true,
+      token,
+      url: fullUrl,
+      localUrl,
+      qrCode: qrDataUrl,
+      fileName: linkEntry.fileName,
+      fileSize: linkEntry.fileSize,
+      expiresAt: linkEntry.expiresAt,
+      expiresInHours: 3
     });
   } catch (err) {
-    res.status(500).json({ error: err.message });
+    if (req.files) {
+      req.files.forEach((f) => {
+        try { fs.unlinkSync(f.path); } catch (e) { }
+      });
+    }
+    res.status(500).json({ error: err.message || 'Failed to package folder' });
   }
 });
 
@@ -588,7 +656,7 @@ app.get('/api/links/download/:token', (req, res) => {
     percent: 0
   });
 
-  const safeFileName = link.fileName.replace(/[^\w\.\-\s]/g, '_');
+  const safeFileName = sanitizeFileName(link.fileName);
   res.setHeader('Access-Control-Allow-Origin', '*');
   res.setHeader('Content-Disposition', `attachment; filename="${safeFileName}"; filename*=UTF-8''${encodeURIComponent(link.fileName)}`);
   res.setHeader('Content-Type', link.mimeType || 'application/octet-stream');
@@ -596,6 +664,15 @@ app.get('/api/links/download/:token', (req, res) => {
 
   const stream = fs.createReadStream(link.filePath);
   let lastProgressReport = 0;
+
+  stream.on('error', (err) => {
+    console.error('Download stream error:', err);
+    if (!res.headersSent) res.status(500).send('Stream error');
+  });
+
+  req.on('close', () => {
+    stream.destroy();
+  });
 
   stream.on('data', (chunk) => {
     bytesSent += chunk.length;
@@ -656,6 +733,10 @@ app.get('/d/:token', (req, res) => {
 
   const remainingSeconds = Math.max(0, Math.floor((link.expiresAt - Date.now()) / 1000));
   const fileSizeMb = (link.fileSize / (1024 * 1024)).toFixed(2);
+  const safeTitle = escapeHtml(link.fileName);
+  const safeDisplayName = link.type === 'text' ? 'Shared Text Note' : escapeHtml(link.fileName);
+  const safeText = escapeHtml(link.textContent || '');
+  const safeId = encodeURIComponent(link.id);
 
   res.send(`
     <!DOCTYPE html>
@@ -663,7 +744,7 @@ app.get('/d/:token', (req, res) => {
     <head>
       <meta charset="utf-8">
       <meta name="viewport" content="width=device-width, initial-scale=1">
-      <title>${link.fileName} - Titan Plus Share</title>
+      <title>${safeTitle} - Titan Plus Share</title>
       <style>
         * { box-sizing: border-box; margin: 0; padding: 0; }
         body {
@@ -751,14 +832,14 @@ app.get('/d/:token', (req, res) => {
         <img src="/logo.png" alt="Titan Plus Share" style="width:52px;height:52px;border-radius:14px;margin:0 auto 12px;display:block;box-shadow:0 4px 16px rgba(37,99,235,0.25);object-fit:cover;" />
         <div class="badge">Titan Plus Share</div>
         <div class="file-icon">${link.type === 'text' ? '📝' : '📥'}</div>
-        <div class="filename">${link.type === 'text' ? 'Shared Text Note' : link.fileName}</div>
+        <div class="filename">${safeDisplayName}</div>
         <div class="filesize">${link.type === 'text' ? (link.textContent || '').length + ' characters' : (fileSizeMb > 0 ? fileSizeMb + ' MB' : link.fileSize + ' B')}</div>
         ${link.type === 'text' ? `
-          <div style="background:#f1f5f9;border:1px solid #e2e8f0;border-radius:14px;padding:14px;font-family:monospace;font-size:13px;text-align:left;white-space:pre-wrap;max-height:180px;overflow-y:auto;margin-bottom:16px;user-select:text;" id="txtContent">${(link.textContent || '').replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;')}</div>
+          <div style="background:#f1f5f9;border:1px solid #e2e8f0;border-radius:14px;padding:14px;font-family:monospace;font-size:13px;text-align:left;white-space:pre-wrap;max-height:180px;overflow-y:auto;margin-bottom:16px;user-select:text;" id="txtContent">${safeText}</div>
           <button class="btn-download" id="copyBtn" onclick="copyTextNote()" style="border:none;cursor:pointer;margin-bottom:10px;">Copy Text</button>
-          <a href="/api/links/download/${link.id}" style="color:#64748b;font-size:12px;text-decoration:none;">Download as .txt file</a>
+          <a href="/api/links/download/${safeId}" style="color:#64748b;font-size:12px;text-decoration:none;">Download as .txt file</a>
         ` : `
-          <a class="btn-download" href="/api/links/download/${link.id}">Download File</a>
+          <a class="btn-download" href="/api/links/download/${safeId}">Download File</a>
         `}
         <div class="timer" id="countdown">Valid for 3 hours</div>
       </div>
@@ -770,7 +851,7 @@ app.get('/d/:token', (req, res) => {
             const btn = document.getElementById('copyBtn');
             btn.innerText = 'Copied to Clipboard! ✓';
             btn.style.background = '#10b981';
-            fetch('/api/links/download/${link.id}').catch(() => {});
+            fetch('/api/links/download/${safeId}').catch(() => {});
             setTimeout(() => {
               btn.innerText = 'Copy Text';
               btn.style.background = '#2563eb';
@@ -803,11 +884,17 @@ if (!fs.existsSync(customSavePath)) {
 }
 
 app.post('/api/settings/save-path', (req, res) => {
+  if (!isLocalRequest(req)) {
+    return res.status(403).json({ error: 'Save path configuration is restricted to local machine' });
+  }
   const { savePath } = req.body;
   if (savePath && typeof savePath === 'string') {
-    customSavePath = savePath;
-    if (!fs.existsSync(customSavePath)) {
-      try { fs.mkdirSync(customSavePath, { recursive: true }); } catch (e) { }
+    const resolved = path.resolve(savePath);
+    if (resolved !== path.parse(resolved).root) {
+      customSavePath = resolved;
+      if (!fs.existsSync(customSavePath)) {
+        try { fs.mkdirSync(customSavePath, { recursive: true }); } catch (e) { }
+      }
     }
   }
   res.json({ success: true, savePath: customSavePath });
@@ -836,13 +923,17 @@ app.post('/api/transfer/send', upload.single('file'), (req, res) => {
 
   if (!req.file) return res.status(400).json({ error: 'No file received' });
 
+  // Sanitize file name to prevent Path Traversal
+  const safeName = sanitizeFileName(originalName || req.file.originalname);
+
   // If custom save path configured, copy file there
   let finalDestination = req.file.path;
   try {
     if (fs.existsSync(customSavePath)) {
-      const targetName = path.join(customSavePath, originalName || req.file.originalname);
+      const targetName = path.join(customSavePath, safeName);
       fs.copyFileSync(req.file.path, targetName);
       finalDestination = targetName;
+      try { fs.unlinkSync(req.file.path); } catch (e) {}
     }
   } catch (e) {
     console.error('Could not copy to custom save path:', e);
@@ -851,7 +942,7 @@ app.post('/api/transfer/send', upload.single('file'), (req, res) => {
   broadcastWs('incoming-transfer', {
     senderId,
     senderName,
-    fileName: originalName || req.file.originalname,
+    fileName: safeName,
     fileSize: req.file.size,
     filePath: finalDestination,
     receivedAt: Date.now()
@@ -962,15 +1053,20 @@ app.post('/api/transfer/push', upload.single('file'), (req, res) => {
     finalFileSize = req.file.size;
     finalFileName = originalName || req.file.originalname;
   } else if (bodyFilePath && fs.existsSync(bodyFilePath)) {
+    if (!isLocalRequest(req)) {
+      return res.status(403).json({ error: 'Direct file path access is restricted to localhost' });
+    }
     finalFilePath = bodyFilePath;
     const stat = fs.statSync(bodyFilePath);
     finalFileSize = stat.size;
-    finalFileName = originalName || path.basename(bodyFilePath);
+    finalFileName = sanitizeFileName(originalName || path.basename(bodyFilePath));
   }
 
   if (!finalFilePath) {
     return res.status(400).json({ error: 'No file uploaded or found on server' });
   }
+
+  finalFileName = sanitizeFileName(finalFileName);
 
   pendingPushes[transferId] = {
     transferId,
@@ -1032,6 +1128,13 @@ app.get('/api/transfer/pull/:id', async (req, res) => {
   res.setHeader('Content-Length', push.fileSize);
 
   const stream = fs.createReadStream(push.filePath, { highWaterMark: 128 * 1024 });
+  stream.on('error', (err) => {
+    console.error('Pull stream error:', err);
+    if (!res.headersSent) res.status(500).send('Stream error');
+  });
+  req.on('close', () => {
+    stream.destroy();
+  });
   stream.pipe(res);
 
   res.on('finish', () => {
@@ -1041,7 +1144,7 @@ app.get('/api/transfer/pull/:id', async (req, res) => {
     // Clean up temporary uploads after 120 seconds
     setTimeout(() => {
       try {
-        if (push.filePath.includes('uploads') && fs.existsSync(push.filePath)) {
+        if (push.filePath && push.filePath.includes('uploads') && fs.existsSync(push.filePath)) {
           fs.unlinkSync(push.filePath);
         }
       } catch (e) { }
@@ -1145,6 +1248,9 @@ function startDiscovery() {
 let pendingSharedItem = null;
 
 app.post('/api/cli/share', (req, res) => {
+  if (!isLocalRequest(req)) {
+    return res.status(403).json({ error: 'CLI sharing is restricted to localhost' });
+  }
   const { filePath } = req.body;
   if (!filePath || !fs.existsSync(filePath)) {
     return res.status(400).json({ error: 'File path invalid' });

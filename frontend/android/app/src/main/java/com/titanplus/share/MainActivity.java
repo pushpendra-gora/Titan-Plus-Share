@@ -57,6 +57,26 @@ public class MainActivity extends BridgeActivity {
     public void onCreate(Bundle savedInstanceState) {
         super.onCreate(savedInstanceState);
 
+        // Clean up old temporary shared files older than 24h
+        new Thread(() -> {
+            try {
+                File cacheDir = getCacheDir();
+                if (cacheDir != null && cacheDir.exists()) {
+                    File[] files = cacheDir.listFiles();
+                    if (files != null) {
+                        long now = System.currentTimeMillis();
+                        for (File f : files) {
+                            if (f.getName().startsWith("shared_") || f.getName().startsWith("titan_part_")) {
+                                if (now - f.lastModified() > 86400000L) {
+                                    f.delete();
+                                }
+                            }
+                        }
+                    }
+                }
+            } catch (Exception ignored) {}
+        }).start();
+
         // 1. Create Android Notification Channel
         createNotificationChannel();
 
@@ -264,6 +284,8 @@ public class MainActivity extends BridgeActivity {
         @JavascriptInterface
         public boolean saveBase64ToDownloads(String base64Data, String fileName) {
             try {
+                if (fileName == null || fileName.trim().isEmpty()) fileName = "file_" + System.currentTimeMillis();
+                fileName = new File(fileName).getName().replaceAll("[\\\\/:*?\"<>|]", "_");
                 byte[] bytes = Base64.decode(base64Data, Base64.DEFAULT);
                 String extension = MimeTypeMap.getFileExtensionFromUrl(fileName);
                 String mimeType = extension != null ? MimeTypeMap.getSingleton().getMimeTypeFromExtension(extension.toLowerCase()) : "application/octet-stream";
@@ -599,10 +621,14 @@ public class MainActivity extends BridgeActivity {
                         showNotification("Sent successfully!", originalName + " sent to Laptop");
                         runOnUiThread(() -> {
                             if (getBridge() != null && getBridge().getWebView() != null) {
-                                getBridge().getWebView().evaluateJavascript(
-                                    "window.dispatchEvent(new CustomEvent('titan-native-upload-complete', { detail: { fileName: '" + originalName.replace("'", "\\'") + "' } }));",
-                                    null
-                                );
+                                try {
+                                    JSONObject detail = new JSONObject();
+                                    detail.put("fileName", originalName);
+                                    getBridge().getWebView().evaluateJavascript(
+                                        "window.dispatchEvent(new CustomEvent('titan-native-upload-complete', { detail: " + detail.toString() + " }));",
+                                        null
+                                    );
+                                } catch (Exception ignored) {}
                             }
                         });
                     } else {
@@ -621,10 +647,14 @@ public class MainActivity extends BridgeActivity {
         private void dispatchUploadError(final String errMsg) {
             runOnUiThread(() -> {
                 if (getBridge() != null && getBridge().getWebView() != null) {
-                    getBridge().getWebView().evaluateJavascript(
-                        "window.dispatchEvent(new CustomEvent('titan-native-upload-error', { detail: { error: '" + errMsg.replace("'", "\\'") + "' } }));",
-                        null
-                    );
+                    try {
+                        JSONObject detail = new JSONObject();
+                        detail.put("error", errMsg);
+                        getBridge().getWebView().evaluateJavascript(
+                            "window.dispatchEvent(new CustomEvent('titan-native-upload-error', { detail: " + detail.toString() + " }));",
+                            null
+                        );
+                    } catch (Exception ignored) {}
                 }
             });
         }
@@ -725,12 +755,22 @@ public class MainActivity extends BridgeActivity {
                     processIncomingFileUri(fileUri);
                 }
             }
+        } else if (Intent.ACTION_SEND_MULTIPLE.equals(action) && type != null) {
+            try {
+                java.util.ArrayList<Uri> fileUris = intent.getParcelableArrayListExtra(Intent.EXTRA_STREAM);
+                if (fileUris != null && !fileUris.isEmpty()) {
+                    for (Uri uri : fileUris) {
+                        processIncomingFileUri(uri);
+                    }
+                }
+            } catch (Exception ignored) {}
         }
     }
 
     private void processIncomingFileUri(Uri fileUri) {
         String[] nameAndSize = getFileNameAndSize(fileUri);
-        String fileName = nameAndSize[0];
+        String rawName = nameAndSize[0];
+        String fileName = rawName != null ? new File(rawName).getName().replaceAll("[\\\\/:*?\"<>|]", "_") : "Shared_File";
         long fileSize = 0;
         try {
             fileSize = Long.parseLong(nameAndSize[1]);
@@ -778,11 +818,15 @@ public class MainActivity extends BridgeActivity {
     private void dispatchToWeb(String itemType, String payload, String name, long size) {
         if (getBridge() != null && getBridge().getWebView() != null) {
             getBridge().getWebView().post(() -> {
-                String js = String.format(
-                    "window.dispatchEvent(new CustomEvent('incoming-share', { detail: { type: '%s', payload: '%s', name: '%s', size: %d } }));",
-                    itemType, payload.replace("'", "\\'"), name.replace("'", "\\'"), size
-                );
-                getBridge().getWebView().evaluateJavascript(js, null);
+                try {
+                    JSONObject detail = new JSONObject();
+                    detail.put("type", itemType);
+                    detail.put("payload", payload);
+                    detail.put("name", name);
+                    detail.put("size", size);
+                    String js = "window.dispatchEvent(new CustomEvent('incoming-share', { detail: " + detail.toString() + " }));";
+                    getBridge().getWebView().evaluateJavascript(js, null);
+                } catch (Exception ignored) {}
             });
         }
     }
