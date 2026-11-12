@@ -37,7 +37,7 @@ module.exports = (req, res) => {
 
   const fileSizeMb = (link.fileSize / (1024 * 1024)).toFixed(1);
   const remainingSeconds = Math.max(0, Math.floor((link.expiresAt - now) / 1000));
-  const directDownload = link.directUrl || `http://${link.laptopIp}:${link.laptopPort}/api/links/download/${link.token}`;
+  const directDownload = link.publicUrl || link.directUrl || `http://${link.laptopIp}:${link.laptopPort}/api/links/download/${link.token}`;
 
   const isText = link.type === 'text' || !!link.textContent;
 

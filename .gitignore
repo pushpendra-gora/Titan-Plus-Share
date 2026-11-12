@@ -26,4 +26,5 @@ Thumbs.db
 .gemini/
 .idea/
 .vscode/
+server/bin/
 

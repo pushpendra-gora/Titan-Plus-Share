@@ -42,6 +42,7 @@ module.exports = (req, res) => {
     laptopIp: link.laptopIp,
     laptopPort: link.laptopPort,
     directUrl: link.directUrl,
+    publicUrl: link.publicUrl || '',
     isExpired,
     remainingSeconds,
     expiresAt: link.expiresAt

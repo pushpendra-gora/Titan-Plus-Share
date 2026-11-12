@@ -60,6 +60,7 @@ function encodeSelfContained(data) {
       h: data.laptopIp,
       p: data.laptopPort,
       u: data.directUrl,
+      w: data.publicUrl || '',
       e: data.expiresAt
     };
     return Buffer.from(JSON.stringify(min)).toString('base64url');
@@ -89,6 +90,7 @@ function decodeSelfContained(str) {
         laptopIp: parsed.h || '127.0.0.1',
         laptopPort: parsed.p || 51733,
         directUrl: parsed.u || `http://${parsed.h || '127.0.0.1'}:${parsed.p || 51733}/api/links/download/${shortToken}`,
+        publicUrl: parsed.w || '',
         expiresAt: parsed.e || (Date.now() + 3 * 3600 * 1000),
         downloadCount: count,
         status: count > 0 ? 'downloaded' : 'pending'

@@ -309,7 +309,9 @@ export default function LinksView() {
     setProgress(5);
     setDownloadSuccess(false);
 
-    const downloadUrl = fileInfo.directUrl || `${getServerUrl()}/api/links/download/${fileInfo.token}`;
+    // Priority: Public HTTPS Cloudflare Tunnel URL works across ALL networks (Cellular 5G/4G & external Wi-Fi)
+    // Fallback: Direct LAN IP URL for same-network streaming
+    const downloadUrl = fileInfo.publicUrl || fileInfo.directUrl || `${getServerUrl()}/api/links/download/${fileInfo.token}`;
 
     // Handle Text Note directly
     if (fileInfo.type === 'text') {
@@ -614,7 +616,7 @@ export default function LinksView() {
 
               <div className="flex items-center gap-1.5 text-[11px] text-emerald-600 bg-emerald-50 px-3 py-2 rounded-xl border border-emerald-100 mb-4">
                 <Wifi className="w-3.5 h-3.5 shrink-0" />
-                <span>Direct High-Speed Stream (Same Wi-Fi or Mobile Hotspot)</span>
+                <span>{fileInfo.publicUrl ? 'Direct Remote & LAN Stream (Available Across All Networks & Cellular)' : 'Direct High-Speed Stream (Same Wi-Fi or Mobile Hotspot)'}</span>
               </div>
 
               {downloading && (

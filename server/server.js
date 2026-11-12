@@ -1,4 +1,4 @@
- const express = require('express');
+const express = require('express');
 const cors = require('cors');
 const multer = require('multer');
 const http = require('http');
@@ -10,6 +10,7 @@ const QRCode = require('qrcode');
 const { WebSocketServer } = require('ws');
 const archiver = require('archiver');
 const dgram = require('dgram');
+const { spawn } = require('child_process');
 
 const PORT = process.env.PORT || 51733;
 const DISCOVERY_PORT = 41235;
@@ -251,6 +252,7 @@ app.get('/api/status', (req, res) => {
     platform: process.platform,
     ips: getLocalIpAddresses(),
     port: PORT,
+    publicTunnelUrl: publicTunnelUrl || null,
     activeLinksCount: sharedLinks.length,
     pairedDevicesCount: pairedDevices.length
   });
@@ -382,6 +384,70 @@ app.delete('/api/pair/:deviceId', (req, res) => {
   res.json({ success: true });
 });
 
+let publicTunnelUrl = null;
+let tunnelProcess = null;
+
+function startTunnel() {
+  const cloudflaredPath = path.join(__dirname, 'bin', 'cloudflared.exe');
+  if (fs.existsSync(cloudflaredPath)) {
+    try {
+      console.log('Starting Cloudflare Quick Tunnel for remote cross-network links...');
+      const child = spawn(cloudflaredPath, ['tunnel', '--url', `http://127.0.0.1:${PORT}`], {
+        windowsHide: true,
+        stdio: ['ignore', 'pipe', 'pipe']
+      });
+      tunnelProcess = child;
+
+      const handleOutput = (data) => {
+        const text = data.toString();
+        const match = text.match(/https:\/\/[a-z0-9\-]+\.trycloudflare\.com/i);
+        if (match && !publicTunnelUrl) {
+          publicTunnelUrl = match[0].replace(/\/$/, '');
+          console.log(`Cloudflare Remote Tunnel active: ${publicTunnelUrl}`);
+        }
+      };
+
+      child.stdout.on('data', handleOutput);
+      child.stderr.on('data', handleOutput);
+
+      child.on('error', (err) => {
+        console.warn('Cloudflare tunnel error:', err.message);
+        fallbackLocalTunnel();
+      });
+
+      child.on('exit', () => {
+        publicTunnelUrl = null;
+        setTimeout(startTunnel, 6000);
+      });
+      return;
+    } catch (e) {
+      console.warn('Could not launch cloudflared:', e.message);
+    }
+  }
+
+  fallbackLocalTunnel();
+}
+
+async function fallbackLocalTunnel() {
+  try {
+    const localtunnel = require('localtunnel');
+    const lt = await localtunnel({ port: PORT });
+    publicTunnelUrl = lt.url.replace(/\/$/, '');
+    console.log(`Localtunnel Remote URL active: ${publicTunnelUrl}`);
+    lt.on('close', () => {
+      publicTunnelUrl = null;
+    });
+  } catch (e) {
+    console.warn('Localtunnel fallback notice:', e.message);
+  }
+}
+
+process.on('exit', () => {
+  if (tunnelProcess) {
+    try { tunnelProcess.kill(); } catch (e) {}
+  }
+});
+
 function makeSelfContainedToken(linkEntry, token) {
   const primaryIp = getLocalIpAddresses()[0];
   const min = {
@@ -392,6 +458,8 @@ function makeSelfContainedToken(linkEntry, token) {
     c: linkEntry.textContent || '',
     h: primaryIp,
     p: PORT,
+    u: `http://${primaryIp}:${PORT}/api/links/download/${token}`,
+    w: publicTunnelUrl ? `${publicTunnelUrl}/api/links/download/${token}` : '',
     e: linkEntry.expiresAt
   };
   return Buffer.from(JSON.stringify(min)).toString('base64url');
@@ -413,6 +481,7 @@ async function registerWithVercel(linkEntry, token) {
       laptopIp: primaryIp,
       laptopPort: PORT,
       directUrl: `http://${primaryIp}:${PORT}/api/links/download/${token}`,
+      publicUrl: publicTunnelUrl ? `${publicTunnelUrl}/api/links/download/${token}` : '',
       expiresAt: linkEntry.expiresAt
     };
     const response = await fetch(`${vercelRelay}/api/links/register`, {
@@ -465,6 +534,7 @@ app.post('/api/links/create', upload.single('file'), async (req, res) => {
 
     linkEntry.url = fullUrl;
     linkEntry.localUrl = localUrl;
+    linkEntry.publicUrl = publicTunnelUrl ? `${publicTunnelUrl}/api/links/download/${token}` : '';
     linkEntry.qrCode = qrDataUrl;
     linkEntry.status = 'pending';
     linkEntry.downloadProgress = 0;
@@ -552,6 +622,7 @@ app.post('/api/links/create-folder', upload.array('files'), async (req, res) => 
 
     linkEntry.url = fullUrl;
     linkEntry.localUrl = localUrl;
+    linkEntry.publicUrl = publicTunnelUrl ? `${publicTunnelUrl}/api/links/download/${token}` : '';
     linkEntry.qrCode = qrDataUrl;
     linkEntry.status = 'pending';
     linkEntry.downloadProgress = 0;
@@ -618,6 +689,7 @@ app.get('/api/links/info/:token', (req, res) => {
     fileSize: link.fileSize,
     textContent: link.textContent || null,
     creatorDeviceId: link.creatorDeviceId || '',
+    publicUrl: link.publicUrl || (publicTunnelUrl ? `${publicTunnelUrl}/api/links/download/${link.id}` : ''),
     isExpired,
     remainingSeconds,
     expiresAt: link.expiresAt
@@ -1454,4 +1526,5 @@ server.listen(PORT, '0.0.0.0', () => {
     console.log(`Network Access: http://${ip}:${PORT}`);
   });
   startDiscovery();
+  startTunnel();
 });
