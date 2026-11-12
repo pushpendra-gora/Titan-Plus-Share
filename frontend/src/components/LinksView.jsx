@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useRef } from 'react';
 import { Link as LinkIcon, Download, CheckCircle, Clock, FileText, AlertCircle, RefreshCw, QrCode, Clipboard, Camera, X, Trash2, Copy, CheckCircle2, ArrowDownCircle, ExternalLink, Check } from 'lucide-react';
 import { getLinkInfo, formatBytes, getServerUrl, getLinksList, deleteLink, getDeviceId } from '../api';
 import { Html5Qrcode } from 'html5-qrcode';
@@ -16,6 +16,7 @@ export default function LinksView() {
   const [myLinks, setMyLinks] = useState([]);
   const [copiedToken, setCopiedToken] = useState(null);
   const [viewQrLink, setViewQrLink] = useState(null);
+  const scannerDomId = useRef(`link-qr-reader-${Math.random().toString(36).substring(2, 7)}`);
 
   // Load ONLY links created by this current device (Sender only)
   const loadLinksHistory = async () => {
@@ -171,9 +172,6 @@ export default function LinksView() {
       setError('Clipboard access denied. Please paste manually.');
     }
   };
-
-  // Unique scanner DOM element ID
-  const scannerDomId = useRef(`link-qr-reader-${Math.random().toString(36).substring(2, 7)}`);
 
   // Live Direct Camera QR Scanner for Link (Instant Camera View - Zero intermediate dashboard)
   useEffect(() => {
