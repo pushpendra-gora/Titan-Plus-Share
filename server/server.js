@@ -145,6 +145,12 @@ const app = express();
 app.use(cors());
 app.use(express.json({ limit: '100mb' }));
 app.use(express.urlencoded({ extended: true, limit: '100mb' }));
+app.use((err, req, res, next) => {
+  if (err instanceof SyntaxError && err.status === 400 && 'body' in err) {
+    return res.status(400).json({ error: 'Malformed JSON payload' });
+  }
+  next(err);
+});
 
 const storage = multer.diskStorage({
   destination: (req, file, cb) => cb(null, UPLOAD_DIR),
@@ -1058,14 +1064,14 @@ app.post('/api/transfer/send', upload.single('file'), (req, res) => {
 
 // Announce a transfer immediately BEFORE file bytes start uploading (Mobile alerted in 2ms)
 app.post('/api/transfer/init-push', (req, res) => {
-  const { targetDeviceId, senderName, fileName, fileSize, transferType, textContent } = req.body;
+  const { targetDeviceId, senderName, fileName, fileSize, transferType, textContent, transferId: customTransferId } = req.body;
   const primaryIp = getLocalIpAddresses()[0];
   const targetDevice = pairedDevices.find(d => 
     d.deviceId === targetDeviceId || 
     (d.ip && targetDeviceId && (targetDeviceId.includes(d.ip) || d.deviceId === targetDeviceId))
   );
 
-  const transferId = crypto.randomBytes(8).toString('hex');
+  const transferId = customTransferId || crypto.randomBytes(8).toString('hex');
   const isText = transferType === 'text' || !!textContent;
 
   pendingPushes[transferId] = {
@@ -1073,7 +1079,7 @@ app.post('/api/transfer/init-push', (req, res) => {
     targetDeviceId,
     targetDeviceType: targetDevice?.deviceType || 'mobile',
     targetDeviceIp: targetDevice?.ip || '',
-    senderName: senderName || 'Laptop',
+    senderName: senderName || 'Windows PC',
     fileName: fileName || (isText ? 'Text Message' : 'File'),
     fileSize: fileSize || 0,
     transferType: isText ? 'text' : 'file',
@@ -1084,22 +1090,20 @@ app.post('/api/transfer/init-push', (req, res) => {
     createdAt: Date.now()
   };
 
-  // Only broadcast immediately if it is text (since text data is already fully present in payload)
-  if (isText) {
-    broadcastWs('incoming-file-push', {
-      transferId,
-      targetDeviceId,
-      targetDeviceType: targetDevice?.deviceType || 'mobile',
-      targetDeviceIp: targetDevice?.ip || '',
-      senderName: senderName || 'Laptop',
-      fileName: 'Text Message',
-      fileSize: fileSize || 0,
-      transferType: 'text',
-      textContent: textContent || '',
-      serverUrl: `http://${primaryIp}:${PORT}`,
-      downloadUrl: `http://${primaryIp}:${PORT}/api/transfer/pull/${transferId}`
-    });
-  }
+  // Broadcast immediately so mobile alerts and prepares receiver modal with 0ms delay!
+  broadcastWs('incoming-file-push', {
+    transferId,
+    targetDeviceId,
+    targetDeviceType: targetDevice?.deviceType || 'mobile',
+    targetDeviceIp: targetDevice?.ip || '',
+    senderName: senderName || 'Windows PC',
+    fileName: fileName || (isText ? 'Text Message' : 'File'),
+    fileSize: fileSize || 0,
+    transferType: isText ? 'text' : 'file',
+    textContent: textContent || '',
+    serverUrl: `http://${primaryIp}:${PORT}`,
+    downloadUrl: `http://${primaryIp}:${PORT}/api/transfer/pull/${transferId}`
+  });
 
   res.json({
     success: true,
@@ -1239,9 +1243,9 @@ app.get('/api/transfer/pull/:id', async (req, res) => {
     return res.status(404).send('Transfer expired or not found');
   }
 
-  // Gracefully wait up to 45s if file is being written to server over localhost
+  // Gracefully wait up to 90s if file is being written to server over localhost
   let waited = 0;
-  while ((!push.filePath || !fs.existsSync(push.filePath)) && waited < 45000) {
+  while ((!push.filePath || !fs.existsSync(push.filePath)) && waited < 90000) {
     await new Promise(r => setTimeout(r, 200));
     waited += 200;
   }
@@ -1250,9 +1254,12 @@ app.get('/api/transfer/pull/:id', async (req, res) => {
     return res.status(404).send('Transfer file not available');
   }
 
+  const stat = fs.existsSync(push.filePath) ? fs.statSync(push.filePath) : null;
+  const actualSize = stat ? stat.size : push.fileSize;
+
   res.setHeader('Content-Disposition', `attachment; filename="${encodeURIComponent(push.fileName)}"`);
   res.setHeader('Content-Type', 'application/octet-stream');
-  res.setHeader('Content-Length', push.fileSize);
+  res.setHeader('Content-Length', actualSize);
 
   const stream = fs.createReadStream(push.filePath, { highWaterMark: 128 * 1024 });
   stream.on('error', (err) => {
@@ -1301,7 +1308,7 @@ app.get('/api/transfer/status/:id', (req, res) => {
   const { id } = req.params;
   const push = pendingPushes[id];
   if (!push) {
-    return res.json({ transferId: id, status: 'completed', completed: true });
+    return res.json({ transferId: id, status: 'waiting', completed: false });
   }
   res.json({
     transferId: id,

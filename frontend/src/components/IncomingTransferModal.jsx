@@ -336,7 +336,7 @@ export default function IncomingTransferModal({ incoming, onClose }) {
                   />
                 </div>
                 <div className="flex items-center justify-between text-[11px] font-semibold text-slate-600 px-1">
-                  <span>{formatBytes(transferredBytes)} / {formatBytes(incoming.fileSize)}</span>
+                  <span>{formatBytes(transferredBytes || (progress > 0 && incoming.fileSize ? Math.round((progress / 100) * incoming.fileSize) : 0))} / {formatBytes(incoming.fileSize)}</span>
                   <span className="text-blue-600 font-bold">{progress}%</span>
                 </div>
                 {speed && !completed && (

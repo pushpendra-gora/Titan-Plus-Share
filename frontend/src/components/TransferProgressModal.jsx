@@ -57,6 +57,23 @@ export default function TransferProgressModal({ targetDevice, item, onClose }) {
 
     let targetEndpoint = '';
     if (isSendingFromLaptop) {
+      // Announce transfer immediately to mobile device so it alerts right away (0ms delay)
+      try {
+        await fetch(`${getServerUrl()}/api/transfer/init-push`, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            transferId: currentTransferId,
+            targetDeviceId: targetDevice.deviceId || '',
+            senderName: localStorage.getItem('titan_device_name') || 'Windows PC',
+            fileName: item.name || 'File',
+            fileSize: item.size || (item.file ? item.file.size : 0),
+            transferType: item.type === 'text' ? 'text' : 'file',
+            textContent: item.text || ''
+          })
+        });
+      } catch (e) {}
+
       // Laptop sending to Mobile: Stage file on local Laptop Server to push over LAN/WebSocket
       targetEndpoint = `${getServerUrl()}/api/transfer/push`;
       formData.append('targetDeviceId', targetDevice.deviceId || '');
@@ -266,10 +283,15 @@ export default function TransferProgressModal({ targetDevice, item, onClose }) {
             } catch (e) {}
           }, 1200);
 
-          // Helpful status update after 12s if mobile hasn't grabbed it yet
+          // Helpful status update after 15s if mobile hasn't grabbed it yet and transfer hasn't started
           timeoutTimerRef.current = setTimeout(() => {
-            setStatusMessage('Staged in queue. Open Titan Plus Share on mobile to receive.');
-          }, 12000);
+            setProgress((curr) => {
+              if (curr === 0) {
+                setStatusMessage('Staged in queue. Open Titan Plus Share on mobile to receive.');
+              }
+              return curr;
+            });
+          }, 15000);
 
         } else {
           // Mobile sent to Laptop directly: transfer finished
