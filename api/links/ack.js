@@ -32,3 +32,4 @@ module.exports = (req, res) => {
     downloadCount: link ? link.downloadCount : 1
   });
 };
+

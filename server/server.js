@@ -315,6 +315,59 @@ app.get('/api/pair/list', (req, res) => {
   res.json(pairedDevices);
 });
 
+// Live Network Device Discovery: ONLY returns devices currently reachable on this exact Wi-Fi network
+app.get('/api/peers/online', (req, res) => {
+  const { myDeviceId } = req.query;
+  const list = [];
+  const seenIds = new Set();
+  const seenIps = new Set();
+
+  const currentIps = getLocalIpAddresses();
+  const currentSubnets = currentIps.map(ip => ip.split('.').slice(0, 3).join('.'));
+
+  // 1. Devices with an active WebSocket connection right now (App is open and ready)
+  for (const client of onlineClients.values()) {
+    if (client.deviceId && client.deviceId !== myDeviceId) {
+      list.push({
+        deviceId: client.deviceId,
+        deviceName: client.deviceName || 'Device',
+        deviceType: client.deviceType || 'mobile',
+        ip: client.ip && client.ip !== 'LAN' ? client.ip : (currentIps[0] || 'LAN'),
+        status: 'online',
+        isReady: true,
+        lastSeen: client.lastSeen || Date.now()
+      });
+      seenIds.add(client.deviceId);
+      if (client.ip && client.ip !== 'LAN') seenIps.add(client.ip);
+    }
+  }
+
+  // 2. Devices that were paired on THIS SAME Wi-Fi subnet (On Wi-Fi in background)
+  for (const dev of pairedDevices) {
+    if (dev.deviceId === myDeviceId || seenIds.has(dev.deviceId)) continue;
+    if (dev.ip && seenIps.has(dev.ip)) continue;
+
+    const devSubnet = dev.ip ? dev.ip.split('.').slice(0, 3).join('.') : '';
+    const isSameSubnet = devSubnet && currentSubnets.includes(devSubnet);
+
+    // Only include if on the same local subnet
+    if (isSameSubnet) {
+      list.push({
+        deviceId: dev.deviceId,
+        deviceName: dev.deviceName || 'Device',
+        deviceType: dev.deviceType || 'mobile',
+        ip: dev.ip,
+        status: 'standby', // on Wi-Fi, background notification will wake it up
+        isReady: false,
+        lastSeen: dev.pairedAt || Date.now()
+      });
+      seenIds.add(dev.deviceId);
+    }
+  }
+
+  res.json(list);
+});
+
 app.delete('/api/pair/:deviceId', (req, res) => {
   const { deviceId } = req.params;
   pairedDevices = pairedDevices.filter((d) => d.deviceId !== deviceId);

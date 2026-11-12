@@ -307,6 +307,59 @@ export default function App() {
     return () => clearInterval(interval);
   }, []);
 
+  // Handle Incoming Background Notification Transfer Tap & Native Server Config Sync
+  useEffect(() => {
+    const syncNativeConfig = () => {
+      if (window.TitanNativeBridge && typeof window.TitanNativeBridge.setSavedServerConfig === 'function') {
+        const srv = getServerUrl();
+        const devId = getDeviceId();
+        if (srv && !srv.includes('127.0.0.1') && !srv.includes('localhost')) {
+          window.TitanNativeBridge.setSavedServerConfig(srv, devId);
+        }
+      }
+    };
+    syncNativeConfig();
+
+    const checkPendingNotificationTransfer = () => {
+      syncNativeConfig();
+      if (window.TitanNativeBridge && typeof window.TitanNativeBridge.getPendingNotificationTransfer === 'function') {
+        try {
+          const raw = window.TitanNativeBridge.getPendingNotificationTransfer();
+          if (raw) {
+            const data = JSON.parse(raw);
+            if (data.serverUrl) setServerUrl(data.serverUrl);
+            setIncomingTransfer(data);
+          }
+        } catch (e) {}
+      }
+    };
+
+    checkPendingNotificationTransfer();
+
+    const handleIncomingNotification = (e) => {
+      if (e.detail) {
+        if (e.detail.serverUrl) setServerUrl(e.detail.serverUrl);
+        setIncomingTransfer(e.detail);
+      }
+    };
+
+    window.handleIncomingNotificationTransfer = (payload) => {
+      if (payload) {
+        if (payload.serverUrl) setServerUrl(payload.serverUrl);
+        setIncomingTransfer(payload);
+      }
+    };
+
+    window.addEventListener('titan-open-incoming-transfer', handleIncomingNotification);
+    window.addEventListener('focus', checkPendingNotificationTransfer);
+
+    return () => {
+      window.removeEventListener('titan-open-incoming-transfer', handleIncomingNotification);
+      window.removeEventListener('focus', checkPendingNotificationTransfer);
+      delete window.handleIncomingNotificationTransfer;
+    };
+  }, []);
+
   // WebSocket Live Peer & File Transfer Notification Connection
   useEffect(() => {
     let ws = null;

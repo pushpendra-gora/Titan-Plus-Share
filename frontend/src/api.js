@@ -171,6 +171,49 @@ export async function getPairedDevices() {
   return filtered;
 }
 
+// Live Network Device Discovery: ONLY returns devices reachable on this exact Wi-Fi network right now
+export async function getOnlinePeers() {
+  const srv = getServerUrl();
+  const myId = getDeviceId();
+  const isMobile = /Android|iPhone|iPad/i.test(navigator.userAgent);
+
+  try {
+    const res = await fetch(`${srv}/api/peers/online?myDeviceId=${encodeURIComponent(myId)}`, {
+      signal: AbortSignal.timeout(2500)
+    });
+    if (res.ok) {
+      const data = await res.json();
+      return (data || []).filter(d => {
+        if (d.deviceId === myId) return false;
+        if (isMobile && d.deviceType === 'mobile' && d.deviceId === myId) return false;
+        return true;
+      });
+    }
+  } catch (e) {}
+
+  // Fallback: If mobile client and talking to laptop server, laptop server itself is online
+  if (isMobile && srv && !srv.includes('127.0.0.1') && !srv.includes('localhost')) {
+    try {
+      const hostUrl = new URL(srv);
+      const hostStatus = await fetch(`${srv}/api/status`, { signal: AbortSignal.timeout(1500) });
+      if (hostStatus.ok) {
+        const sData = await hostStatus.json();
+        return [{
+          deviceId: 'lap_' + hostUrl.hostname,
+          deviceName: sData.hostname || 'Host Laptop',
+          deviceType: 'laptop',
+          ip: hostUrl.hostname,
+          port: hostUrl.port || 51733,
+          status: 'online',
+          isReady: true
+        }];
+      }
+    } catch (e) {}
+  }
+
+  return [];
+}
+
 export async function removePairedDevice(deviceId) {
   try {
     await fetch(`${getServerUrl()}/api/pair/${deviceId}`, { method: 'DELETE' });

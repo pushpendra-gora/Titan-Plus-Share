@@ -29,13 +29,17 @@ import android.widget.Toast;
 import com.getcapacitor.BridgeActivity;
 
 import android.content.ContentValues;
+import android.content.SharedPreferences;
 import android.provider.MediaStore;
 import android.webkit.MimeTypeMap;
 import android.webkit.ValueCallback;
 import java.io.OutputStream;
+import java.io.ByteArrayOutputStream;
 import java.net.HttpURLConnection;
 import java.net.URL;
+import java.net.URLEncoder;
 import org.json.JSONObject;
+import org.json.JSONArray;
 import java.io.File;
 import java.io.FileInputStream;
 import java.io.FileOutputStream;
@@ -51,6 +55,8 @@ public class MainActivity extends BridgeActivity {
     private static final int NATIVE_PICK_FOLDER_REQ = 3004;
     private static final String CHANNEL_ID = "titan_plus_share_channel";
     private static String pendingShareJson = null;
+    private static String pendingNotificationTransfer = null;
+    private static volatile boolean isAppInForeground = false;
     private ValueCallback<Uri[]> filePathCallback;
 
     @Override
@@ -179,6 +185,152 @@ public class MainActivity extends BridgeActivity {
         });
 
         handleSendIntent(getIntent());
+        startBackgroundTransferMonitor();
+    }
+
+    @Override
+    public void onResume() {
+        super.onResume();
+        isAppInForeground = true;
+        checkAndDeliverNotificationTransfer(getIntent());
+    }
+
+    @Override
+    public void onPause() {
+        super.onPause();
+        isAppInForeground = false;
+    }
+
+    private void checkAndDeliverNotificationTransfer(Intent intent) {
+        if (intent != null && intent.hasExtra("INCOMING_TRANSFER_JSON")) {
+            String json = intent.getStringExtra("INCOMING_TRANSFER_JSON");
+            intent.removeExtra("INCOMING_TRANSFER_JSON");
+            if (json != null && !json.trim().isEmpty()) {
+                pendingNotificationTransfer = json;
+                runOnUiThread(() -> {
+                    if (getBridge() != null && getBridge().getWebView() != null) {
+                        getBridge().getWebView().evaluateJavascript(
+                            "(function() { " +
+                            "  try { " +
+                            "    var payload = " + json + "; " +
+                            "    if (window.handleIncomingNotificationTransfer) { " +
+                            "      window.handleIncomingNotificationTransfer(payload); " +
+                            "    } else { " +
+                            "      window.dispatchEvent(new CustomEvent('titan-open-incoming-transfer', { detail: payload })); " +
+                            "    } " +
+                            "  } catch(e) {} " +
+                            "})();",
+                            null
+                        );
+                    }
+                });
+            }
+        }
+    }
+
+    private void startBackgroundTransferMonitor() {
+        new Thread(() -> {
+            while (!isFinishing()) {
+                try {
+                    Thread.sleep(2500);
+                } catch (InterruptedException e) {
+                    break;
+                }
+
+                // If app is in foreground, WebSocket handles instant transfer directly
+                if (isAppInForeground) continue;
+
+                SharedPreferences prefs = getSharedPreferences("titan_prefs", MODE_PRIVATE);
+                String serverUrl = prefs.getString("server_url", null);
+                String deviceId = prefs.getString("device_id", null);
+
+                if (serverUrl == null || serverUrl.isEmpty() || serverUrl.contains("127.0.0.1") || serverUrl.contains("localhost")) {
+                    continue;
+                }
+
+                HttpURLConnection conn = null;
+                try {
+                    String devParam = deviceId != null ? URLEncoder.encode(deviceId, "UTF-8") : "";
+                    URL url = new URL(serverUrl + "/api/transfer/pending?deviceId=" + devParam + "&deviceType=mobile");
+                    conn = (HttpURLConnection) url.openConnection();
+                    conn.setConnectTimeout(2500);
+                    conn.setReadTimeout(3000);
+                    conn.setRequestMethod("GET");
+
+                    if (conn.getResponseCode() == 200) {
+                        InputStream is = conn.getInputStream();
+                        ByteArrayOutputStream baos = new ByteArrayOutputStream();
+                        byte[] buf = new byte[4096];
+                        int n;
+                        while ((n = is.read(buf)) != -1) baos.write(buf, 0, n);
+                        String resp = baos.toString("UTF-8");
+                        JSONArray arr = new JSONArray(resp);
+                        if (arr.length() > 0) {
+                            JSONObject item = arr.getJSONObject(0);
+                            String trId = item.optString("transferId");
+                            String lastNotifiedId = prefs.getString("last_notified_tr_id", "");
+                            if (!trId.equals(lastNotifiedId)) {
+                                prefs.edit().putString("last_notified_tr_id", trId).apply();
+                                showTransferNotification(item);
+                            }
+                        }
+                    }
+                } catch (Exception ignored) {
+                } finally {
+                    if (conn != null) conn.disconnect();
+                }
+            }
+        }).start();
+    }
+
+    private void showTransferNotification(JSONObject item) {
+        try {
+            String sender = item.optString("senderName", "Windows PC");
+            String fileName = item.optString("fileName", "File");
+            long fileSize = item.optLong("fileSize", 0);
+            String type = item.optString("transferType", "file");
+            String sizeFormatted = fileSize > 0 ? formatFileSize(fileSize) : "";
+
+            String title = "text".equals(type) ? "Incoming Text Note from " + sender : "Incoming File: " + fileName;
+            String content = "text".equals(type) 
+                ? "From " + sender + " • Tap to open and view note" 
+                : (sizeFormatted.isEmpty() ? "" : sizeFormatted + " • ") + "Tap to receive immediately";
+
+            Intent intent = new Intent(MainActivity.this, MainActivity.class);
+            intent.setFlags(Intent.FLAG_ACTIVITY_CLEAR_TOP | Intent.FLAG_ACTIVITY_SINGLE_TOP);
+            intent.putExtra("INCOMING_TRANSFER_JSON", item.toString());
+
+            PendingIntent pendingIntent = PendingIntent.getActivity(
+                MainActivity.this, (int) System.currentTimeMillis(), intent,
+                PendingIntent.FLAG_UPDATE_CURRENT | (Build.VERSION.SDK_INT >= Build.VERSION_CODES.M ? PendingIntent.FLAG_IMMUTABLE : 0)
+            );
+
+            NotificationCompat.Builder builder = new NotificationCompat.Builder(MainActivity.this, CHANNEL_ID)
+                .setSmallIcon(R.mipmap.ic_launcher)
+                .setContentTitle(title)
+                .setContentText(content)
+                .setPriority(NotificationCompat.PRIORITY_MAX)
+                .setCategory(NotificationCompat.CATEGORY_MESSAGE)
+                .setAutoCancel(true)
+                .setContentIntent(pendingIntent)
+                .setDefaults(NotificationCompat.DEFAULT_ALL)
+                .setVibrate(new long[]{ 0, 350, 150, 350 });
+
+            NotificationManager notificationManager = (NotificationManager) getSystemService(Context.NOTIFICATION_SERVICE);
+            if (notificationManager != null) {
+                notificationManager.notify(7788, builder.build());
+            }
+        } catch (Exception e) {
+            e.printStackTrace();
+        }
+    }
+
+    private static String formatFileSize(long bytes) {
+        if (bytes <= 0) return "0 B";
+        final String[] units = new String[] { "B", "KB", "MB", "GB", "TB" };
+        int digitGroups = (int) (Math.log10(bytes) / Math.log10(1024));
+        if (digitGroups >= units.length) digitGroups = units.length - 1;
+        return String.format(java.util.Locale.US, "%.1f %s", bytes / Math.pow(1024, digitGroups), units[digitGroups]);
     }
 
     @Override
@@ -253,6 +405,24 @@ public class MainActivity extends BridgeActivity {
     }
 
     public class TitanNativeBridge {
+        @JavascriptInterface
+        public void setSavedServerConfig(String serverUrl, String deviceId) {
+            try {
+                SharedPreferences prefs = getSharedPreferences("titan_prefs", MODE_PRIVATE);
+                prefs.edit()
+                    .putString("server_url", serverUrl)
+                    .putString("device_id", deviceId)
+                    .apply();
+            } catch (Exception ignored) {}
+        }
+
+        @JavascriptInterface
+        public String getPendingNotificationTransfer() {
+            String pending = pendingNotificationTransfer;
+            pendingNotificationTransfer = null;
+            return pending != null ? pending : "";
+        }
+
         @JavascriptInterface
         public void showNotification(String title, String message) {
             try {
@@ -773,6 +943,7 @@ public class MainActivity extends BridgeActivity {
         super.onNewIntent(intent);
         setIntent(intent);
         handleSendIntent(intent);
+        checkAndDeliverNotificationTransfer(intent);
     }
 
     private void handleSendIntent(Intent intent) {

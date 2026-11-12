@@ -11,7 +11,7 @@ export default function IncomingTransferModal({ incoming, onClose }) {
   const [speed, setSpeed] = useState('');
   const [completed, setCompleted] = useState(incoming.isCompleted || incoming.transferType === 'text');
   const [copied, setCopied] = useState(false);
-  const xhrRef = React.useRef(null);
+  const xhrRef = useRef(null);
   
   const isText = incoming.transferType === 'text' || !!incoming.textContent;
 

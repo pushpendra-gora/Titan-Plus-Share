@@ -1,6 +1,6 @@
 import React, { useState, useEffect, useRef } from 'react';
-import { X, Wifi, Link as LinkIcon, Laptop, Smartphone, CheckCircle, Copy, QrCode, ArrowRight, Clock, Plus, Camera, RefreshCw, Image, ArrowDownCircle, CheckCircle2 } from 'lucide-react';
-import { formatBytes, generateShareLink, generateFolderShareLink, getPairedDevices, getServerUrl, setServerUrl, getPairingInfo, getDeviceId, getDeviceName, authenticateDevice } from '../api';
+import { X, Wifi, Link as LinkIcon, Laptop, Smartphone, CheckCircle, Copy, QrCode, ArrowRight, Clock, Plus, Camera, RefreshCw, Image, ArrowDownCircle, CheckCircle2, Radio } from 'lucide-react';
+import { formatBytes, generateShareLink, generateFolderShareLink, getPairedDevices, getOnlinePeers, getServerUrl, setServerUrl, getPairingInfo, getDeviceId, getDeviceName, authenticateDevice } from '../api';
 import { Capacitor } from '@capacitor/core';
 import { Html5Qrcode } from 'html5-qrcode';
 import confetti from 'canvas-confetti';
@@ -12,6 +12,7 @@ export default function SendModal({ item, onClose, onStartTransfer }) {
   const [copied, setCopied] = useState(false);
   const [showQr, setShowQr] = useState(false);
   const [pairedDevices, setPairedDevices] = useState([]);
+  const [scanningDevices, setScanningDevices] = useState(false);
   const [pairingData, setPairingData] = useState(null);
   const [scanning, setScanning] = useState(false);
   const [scanMessage, setScanMessage] = useState(null);
@@ -19,11 +20,14 @@ export default function SendModal({ item, onClose, onStartTransfer }) {
   const imageInputRef = useRef(null);
 
   const loadDevices = async () => {
+    setScanningDevices(true);
     try {
-      const devices = await getPairedDevices();
+      const devices = await getOnlinePeers();
       setPairedDevices(devices || []);
     } catch (e) {
       setPairedDevices([]);
+    } finally {
+      setScanningDevices(false);
     }
   };
 
@@ -389,70 +393,108 @@ export default function SendModal({ item, onClose, onStartTransfer }) {
           </div>
         )}
 
-        {/* View 2: Device Selection (NO DUMMY DATA) */}
+        {/* View 2: Device Selection (Live Same-Network Devices ONLY) */}
         {view === 'devices' && (
           <div>
             <div className="flex items-center justify-between mb-3 px-1">
-              <h3 className="text-sm font-semibold text-slate-700">Select Device (Same Network)</h3>
-              <button 
-                onClick={() => setView('menu')}
-                className="text-xs text-blue-600 font-semibold hover:underline"
-              >
-                Back
-              </button>
+              <div>
+                <h3 className="text-sm font-semibold text-slate-800">Direct Transfer (Same Network)</h3>
+                <p className="text-[11px] text-slate-400">Showing devices active on this Wi-Fi right now</p>
+              </div>
+              <div className="flex items-center gap-2">
+                <button
+                  onClick={loadDevices}
+                  disabled={scanningDevices}
+                  title="Scan Network"
+                  className="p-1.5 text-slate-400 hover:text-blue-600 hover:bg-blue-50 rounded-lg transition"
+                >
+                  <RefreshCw className={`w-3.5 h-3.5 ${scanningDevices ? 'animate-spin text-blue-600' : ''}`} />
+                </button>
+                <button 
+                  onClick={() => setView('menu')}
+                  className="text-xs text-blue-600 font-semibold hover:underline"
+                >
+                  Back
+                </button>
+              </div>
             </div>
 
-            {pairedDevices.length > 0 ? (
+            {scanningDevices && pairedDevices.length === 0 ? (
+              <div className="py-8 text-center bg-slate-50/70 rounded-2xl border border-slate-100 mb-3">
+                <div className="w-10 h-10 rounded-full border-2 border-blue-600 border-t-transparent animate-spin mx-auto mb-2" />
+                <p className="text-xs font-semibold text-slate-700">Scanning active Wi-Fi network...</p>
+                <p className="text-[11px] text-slate-400">Detecting reachable devices on this subnet</p>
+              </div>
+            ) : pairedDevices.length > 0 ? (
               <div className="space-y-2.5">
-                {pairedDevices.map((dev) => (
-                  <button
-                    key={dev.deviceId}
-                    onClick={() => onStartTransfer(dev, item)}
-                    className="w-full flex items-center justify-between p-3.5 bg-white hover:bg-blue-50/50 border border-slate-100 hover:border-blue-200 rounded-2xl shadow-sm transition group text-left"
-                  >
-                    <div className="flex items-center gap-3">
-                      <div className="w-10 h-10 rounded-xl bg-slate-100 group-hover:bg-blue-600 group-hover:text-white text-slate-600 flex items-center justify-center transition duration-200">
-                        {dev.deviceType === 'laptop' ? <Laptop className="w-5 h-5" /> : <Smartphone className="w-5 h-5" />}
-                      </div>
-                      <div>
-                        <div className="flex items-center gap-2">
-                          <span className="font-semibold text-slate-800 text-sm">{dev.deviceName}</span>
-                          <span className="w-2 h-2 rounded-full bg-emerald-500 inline-block"></span>
+                {pairedDevices.map((dev) => {
+                  const isOnline = dev.status === 'online';
+                  return (
+                    <button
+                      key={dev.deviceId}
+                      onClick={() => onStartTransfer(dev, item)}
+                      className="w-full flex items-center justify-between p-3.5 bg-white hover:bg-blue-50/50 border border-slate-100 hover:border-blue-200 rounded-2xl shadow-sm transition group text-left"
+                    >
+                      <div className="flex items-center gap-3">
+                        <div className={`w-10 h-10 rounded-xl flex items-center justify-center transition duration-200 ${
+                          isOnline ? 'bg-emerald-50 text-emerald-600 group-hover:bg-emerald-600 group-hover:text-white' : 'bg-blue-50 text-blue-600 group-hover:bg-blue-600 group-hover:text-white'
+                        }`}>
+                          {dev.deviceType === 'laptop' ? <Laptop className="w-5 h-5" /> : <Smartphone className="w-5 h-5" />}
                         </div>
-                        <span className="text-[11px] text-slate-400 font-medium">
-                          {dev.ip ? `${dev.ip} • Online` : 'Online'}
-                        </span>
+                        <div>
+                          <div className="flex items-center gap-2">
+                            <span className="font-semibold text-slate-800 text-sm">{dev.deviceName}</span>
+                            <span className={`w-2 h-2 rounded-full inline-block ${isOnline ? 'bg-emerald-500 animate-pulse' : 'bg-blue-500'}`} />
+                          </div>
+                          <span className="text-[11px] font-medium flex items-center gap-1.5 mt-0.5">
+                            {isOnline ? (
+                              <span className="text-emerald-600 font-semibold">Online • App Open & Ready</span>
+                            ) : (
+                              <span className="text-blue-600 font-semibold">On Wi-Fi • Tap to Wake & Send</span>
+                            )}
+                            {dev.ip && <span className="text-slate-400">({dev.ip})</span>}
+                          </span>
+                        </div>
                       </div>
-                    </div>
-                    <ArrowRight className="w-4 h-4 text-slate-300 group-hover:text-blue-600 group-hover:translate-x-0.5 transition" />
-                  </button>
-                ))}
+                      <ArrowRight className="w-4 h-4 text-slate-300 group-hover:text-blue-600 group-hover:translate-x-0.5 transition" />
+                    </button>
+                  );
+                })}
 
                 <button
                   onClick={openPairing}
                   className="w-full py-2.5 px-3 border border-dashed border-slate-200 hover:border-blue-300 rounded-xl text-xs font-semibold text-slate-500 hover:text-blue-600 flex items-center justify-center gap-1.5 transition"
                 >
                   <Plus className="w-3.5 h-3.5" />
-                  <span>Pair Another Device</span>
+                  <span>Pair Another Device via QR</span>
                 </button>
               </div>
             ) : (
-              /* REAL EMPTY STATE WHEN NO DEVICES ARE PAIRED */
+              /* REAL EMPTY STATE WHEN NO DEVICES DETECTED ON THIS NETWORK */
               <div className="p-6 bg-slate-50/80 rounded-2xl border border-slate-100 text-center">
                 <div className="w-14 h-14 rounded-2xl bg-blue-50 border border-blue-100 text-blue-600 flex items-center justify-center mx-auto mb-3 shadow-sm">
-                  <QrCode className="w-7 h-7" />
+                  <Radio className="w-7 h-7 text-blue-500 animate-pulse" />
                 </div>
-                <h4 className="font-bold text-slate-800 text-sm mb-1">No Paired Devices Found</h4>
+                <h4 className="font-bold text-slate-800 text-sm mb-1">No Active Devices Detected</h4>
                 <p className="text-xs text-slate-500 mb-4 max-w-xs mx-auto">
-                  Pair your PC and Mobile once using QR code to enable direct local network transfer.
+                  Ensure both your laptop and mobile device are connected to the exact same Wi-Fi network.
                 </p>
-                <button
-                  onClick={openPairing}
-                  className="w-full py-3 bg-blue-600 hover:bg-blue-700 text-white rounded-xl text-xs font-semibold flex items-center justify-center gap-2 shadow-md shadow-blue-500/25 transition"
-                >
-                  <QrCode className="w-4 h-4" />
-                  <span>Pair Device via QR Code</span>
-                </button>
+                <div className="flex gap-2">
+                  <button
+                    onClick={loadDevices}
+                    className="flex-1 py-2.5 bg-slate-100 hover:bg-slate-200 text-slate-700 rounded-xl text-xs font-semibold flex items-center justify-center gap-1.5 transition"
+                  >
+                    <RefreshCw className="w-3.5 h-3.5" />
+                    <span>Scan Again</span>
+                  </button>
+                  <button
+                    onClick={openPairing}
+                    className="flex-1 py-2.5 bg-blue-600 hover:bg-blue-700 text-white rounded-xl text-xs font-semibold flex items-center justify-center gap-1.5 shadow-md shadow-blue-500/25 transition"
+                  >
+                    <QrCode className="w-3.5 h-3.5" />
+                    <span>Pair via QR</span>
+                  </button>
+                </div>
               </div>
             )}
           </div>
