@@ -1,7 +1,7 @@
 import React, { useState, useEffect, useRef } from 'react';
 import { QrCode, Smartphone, Laptop, Trash2, Camera, Check, Server, HardDrive, Info, RefreshCw, Folder, Image, Wifi, Radio } from 'lucide-react';
 import { getDeviceId, getDeviceName, setDeviceName, getPairingInfo, getPairedDevices, removePairedDevice, authenticateDevice, getServerUrl, setServerUrl, autoDiscoverLaptopServer } from '../api';
-import { Html5QrcodeScanner, Html5Qrcode } from 'html5-qrcode';
+import { Html5Qrcode } from 'html5-qrcode';
 
 export default function SettingsView({ isMobileMode, onNavigate }) {
   const [deviceName, setDevName] = useState(getDeviceName());
@@ -207,34 +207,53 @@ export default function SettingsView({ isMobileMode, onNavigate }) {
     }
   };
 
-  // Live Camera Scanner
+  // Live Direct Camera Scanner (Instant Camera View - Zero intermediate dashboard)
   useEffect(() => {
     if (!scanning) return;
 
-    let scanner = null;
-    try {
-      scanner = new Html5QrcodeScanner('qr-reader', {
-        fps: 10,
-        qrbox: { width: 220, height: 220 },
-        videoConstraints: {
-          facingMode: { ideal: "environment" }
-        }
-      });
+    let qrCodeInstance = null;
+    let isStopped = false;
 
-      scanner.render(
-        async (decodedText) => {
+    const startDirectCamera = async () => {
+      try {
+        qrCodeInstance = new Html5Qrcode('qr-reader');
+        const config = {
+          fps: 15,
+          qrbox: { width: 220, height: 220 },
+          aspectRatio: 1.0
+        };
+
+        const onScanSuccess = async (decodedText) => {
+          if (isStopped) return;
+          isStopped = true;
           await processPairingPayload(decodedText);
-          try { scanner.clear(); } catch (e) {}
-        },
-        () => {}
-      );
-    } catch (e) {
-      console.error(e);
-    }
+        };
+
+        // Immediately start back camera directly without any buttons or dropdowns
+        try {
+          await qrCodeInstance.start({ facingMode: "environment" }, config, onScanSuccess, () => {});
+        } catch (camErr) {
+          // Fallback to front camera if back camera not available
+          await qrCodeInstance.start({ facingMode: "user" }, config, onScanSuccess, () => {});
+        }
+      } catch (e) {
+        console.warn('Settings camera direct start error:', e);
+      }
+    };
+
+    const timer = setTimeout(startDirectCamera, 50);
 
     return () => {
-      if (scanner) {
-        try { scanner.clear(); } catch (e) {}
+      isStopped = true;
+      clearTimeout(timer);
+      if (qrCodeInstance) {
+        try {
+          if (qrCodeInstance.isScanning) {
+            qrCodeInstance.stop().then(() => qrCodeInstance.clear()).catch(() => {});
+          } else {
+            qrCodeInstance.clear();
+          }
+        } catch (e) {}
       }
     };
   }, [scanning]);
@@ -423,9 +442,28 @@ export default function SettingsView({ isMobileMode, onNavigate }) {
           </div>
 
           {scanning && (
-            <div className="p-3 sm:p-4 bg-slate-50 rounded-2xl border border-slate-200 overflow-hidden">
-              <div id="qr-reader" className="w-full max-w-[280px] mx-auto overflow-hidden rounded-xl"></div>
-              <p className="text-[11px] text-slate-400 text-center mt-2">Point camera at the laptop pairing QR code</p>
+            <div className="p-3 sm:p-4 bg-white rounded-2xl border border-blue-200 overflow-hidden text-center shadow-sm">
+              <div className="flex items-center justify-between mb-2">
+                <span className="text-xs font-bold text-slate-700 flex items-center gap-1.5">
+                  <Camera className="w-3.5 h-3.5 text-blue-600 animate-pulse" />
+                  <span>Scanning Laptop QR...</span>
+                </span>
+                <button onClick={() => setScanning(false)} className="text-slate-400 hover:text-slate-600 p-1">
+                  <X className="w-4 h-4" />
+                </button>
+              </div>
+              <div className="relative overflow-hidden rounded-2xl bg-black aspect-square max-w-[260px] mx-auto shadow-inner">
+                <div id="qr-reader" className="w-full h-full"></div>
+                <div className="absolute inset-0 border-2 border-blue-500/40 rounded-2xl pointer-events-none flex items-center justify-center">
+                  <div className="w-48 h-48 border border-white/40 rounded-xl relative">
+                    <div className="absolute -top-0.5 -left-0.5 w-4 h-4 border-t-2 border-l-2 border-blue-500 rounded-tl"></div>
+                    <div className="absolute -top-0.5 -right-0.5 w-4 h-4 border-t-2 border-r-2 border-blue-500 rounded-tr"></div>
+                    <div className="absolute -bottom-0.5 -left-0.5 w-4 h-4 border-b-2 border-l-2 border-blue-500 rounded-bl"></div>
+                    <div className="absolute -bottom-0.5 -right-0.5 w-4 h-4 border-b-2 border-r-2 border-blue-500 rounded-br"></div>
+                  </div>
+                </div>
+              </div>
+              <p className="text-[11px] text-slate-400 text-center mt-2">Point camera directly at the laptop pairing QR</p>
             </div>
           )}
 

@@ -49,15 +49,26 @@ let activeTransfers = {};
 
 function getLocalIpAddresses() {
   const interfaces = os.networkInterfaces();
-  const addresses = [];
+  const wifiList = [];
+  const otherList = [];
+
   for (const name of Object.keys(interfaces)) {
+    const isWifiOrHotspot = /wi-fi|wlan|wireless|hotspot/i.test(name);
     for (const net of interfaces[name]) {
-      if (net.family === 'IPv4' && !net.internal) {
-        addresses.push(net.address);
+      if (net.family === 'IPv4' && !net.internal && net.address !== '127.0.0.1') {
+        // Skip virtual or apipa addresses if possible
+        if (net.address.startsWith('169.254.')) continue;
+        if (isWifiOrHotspot) {
+          wifiList.push(net.address);
+        } else {
+          otherList.push(net.address);
+        }
       }
     }
   }
-  return addresses.length > 0 ? addresses : ['127.0.0.1'];
+
+  const combined = [...wifiList, ...otherList];
+  return combined.length > 0 ? combined : ['127.0.0.1'];
 }
 
 function cleanupExpiredLinks() {

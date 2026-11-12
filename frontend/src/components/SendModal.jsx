@@ -1,7 +1,7 @@
 import React, { useState, useEffect, useRef } from 'react';
 import { X, Wifi, Link as LinkIcon, Laptop, Smartphone, CheckCircle, Copy, QrCode, ArrowRight, Clock, Plus, Camera, RefreshCw, Image, ArrowDownCircle, CheckCircle2 } from 'lucide-react';
-import { formatBytes, generateShareLink, generateFolderShareLink, getPairedDevices, getServerUrl, getPairingInfo, getDeviceId, getDeviceName, authenticateDevice } from '../api';
-import { Html5QrcodeScanner, Html5Qrcode } from 'html5-qrcode';
+import { formatBytes, generateShareLink, generateFolderShareLink, getPairedDevices, getServerUrl, setServerUrl, getPairingInfo, getDeviceId, getDeviceName, authenticateDevice } from '../api';
+import { Html5Qrcode } from 'html5-qrcode';
 import confetti from 'canvas-confetti';
 
 export default function SendModal({ item, onClose, onStartTransfer }) {
@@ -106,28 +106,49 @@ export default function SendModal({ item, onClose, onStartTransfer }) {
   useEffect(() => {
     if (!scanning || view !== 'pairing') return;
 
-    let scanner = null;
-    try {
-      scanner = new Html5QrcodeScanner('modal-qr-reader', {
-        fps: 10,
-        qrbox: { width: 220, height: 220 },
-        videoConstraints: {
-          facingMode: { ideal: "environment" }
-        }
-      });
+    let qrCodeInstance = null;
+    let isStopped = false;
 
-      scanner.render(
-        async (decodedText) => {
+    const startDirectCamera = async () => {
+      try {
+        qrCodeInstance = new Html5Qrcode('modal-qr-reader');
+        const config = {
+          fps: 15,
+          qrbox: { width: 220, height: 220 },
+          aspectRatio: 1.0
+        };
+
+        const onScanSuccess = async (decodedText) => {
+          if (isStopped) return;
+          isStopped = true;
+          setScanning(false);
           await processPairing(decodedText);
-          try { scanner.clear(); } catch (e) {}
-        },
-        () => {}
-      );
-    } catch (e) {}
+        };
+
+        // Immediately start camera directly without any buttons or dropdowns
+        try {
+          await qrCodeInstance.start({ facingMode: "environment" }, config, onScanSuccess, () => {});
+        } catch (camErr) {
+          await qrCodeInstance.start({ facingMode: "user" }, config, onScanSuccess, () => {});
+        }
+      } catch (e) {
+        console.warn('Modal camera start error:', e);
+      }
+    };
+
+    const timer = setTimeout(startDirectCamera, 50);
 
     return () => {
-      if (scanner) {
-        try { scanner.clear(); } catch (e) {}
+      isStopped = true;
+      clearTimeout(timer);
+      if (qrCodeInstance) {
+        try {
+          if (qrCodeInstance.isScanning) {
+            qrCodeInstance.stop().then(() => qrCodeInstance.clear()).catch(() => {});
+          } else {
+            qrCodeInstance.clear();
+          }
+        } catch (e) {}
       }
     };
   }, [scanning, view]);
@@ -141,7 +162,7 @@ export default function SendModal({ item, onClose, onStartTransfer }) {
       const decodedText = await html5QrCode.scanFile(file, false);
       await processPairing(decodedText);
     } catch (err) {
-      alert('Could not detect QR code in this photo. Please try camera scan.');
+      setScanMessage('Could not detect QR code in this photo. Please try camera scan.');
     }
     e.target.value = '';
   };
@@ -417,8 +438,17 @@ export default function SendModal({ item, onClose, onStartTransfer }) {
               </div>
 
               {scanning && (
-                <div className="mt-3 p-3 bg-slate-100 rounded-2xl">
-                  <div id="modal-qr-reader" className="w-full max-w-xs mx-auto overflow-hidden rounded-xl"></div>
+                <div className="mt-3 relative overflow-hidden rounded-2xl bg-black aspect-square max-w-[260px] mx-auto shadow-inner">
+                  <div id="modal-qr-reader" className="w-full h-full"></div>
+                  {/* Viewfinder Aiming Overlay */}
+                  <div className="absolute inset-0 border-2 border-blue-500/40 rounded-2xl pointer-events-none flex items-center justify-center">
+                    <div className="w-48 h-48 border border-white/40 rounded-xl relative">
+                      <div className="absolute -top-0.5 -left-0.5 w-4 h-4 border-t-2 border-l-2 border-blue-500 rounded-tl"></div>
+                      <div className="absolute -top-0.5 -right-0.5 w-4 h-4 border-t-2 border-r-2 border-blue-500 rounded-tr"></div>
+                      <div className="absolute -bottom-0.5 -left-0.5 w-4 h-4 border-b-2 border-l-2 border-blue-500 rounded-bl"></div>
+                      <div className="absolute -bottom-0.5 -right-0.5 w-4 h-4 border-b-2 border-r-2 border-blue-500 rounded-br"></div>
+                    </div>
+                  </div>
                 </div>
               )}
 

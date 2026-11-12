@@ -1,7 +1,7 @@
 import React, { useState, useEffect } from 'react';
 import { Link as LinkIcon, Download, CheckCircle, Clock, FileText, AlertCircle, RefreshCw, QrCode, Clipboard, Camera, X, Trash2, Copy, CheckCircle2, ArrowDownCircle, ExternalLink, Check } from 'lucide-react';
 import { getLinkInfo, formatBytes, getServerUrl, getLinksList, deleteLink, getDeviceId } from '../api';
-import { Html5QrcodeScanner } from 'html5-qrcode';
+import { Html5Qrcode } from 'html5-qrcode';
 import confetti from 'canvas-confetti';
 
 export default function LinksView() {
@@ -155,30 +155,55 @@ export default function LinksView() {
     }
   };
 
-  // Live QR Scanner for Link
+  // Live Direct Camera QR Scanner for Link (Instant Camera View - Zero intermediate dashboard)
   useEffect(() => {
     if (!showScanner) return;
-    let scanner = null;
-    try {
-      scanner = new Html5QrcodeScanner('link-qr-reader', {
-        fps: 10,
-        qrbox: { width: 220, height: 220 },
-        videoConstraints: { facingMode: { ideal: "environment" } }
-      });
-      scanner.render(
-        (decodedText) => {
+    let qrCodeInstance = null;
+    let isStopped = false;
+
+    const startDirectCamera = async () => {
+      try {
+        qrCodeInstance = new Html5Qrcode('link-qr-reader');
+        const config = {
+          fps: 15,
+          qrbox: { width: 220, height: 220 },
+          aspectRatio: 1.0
+        };
+
+        const onScanSuccess = (decodedText) => {
+          if (isStopped) return;
+          isStopped = true;
           setUrlInput(decodedText.trim());
           setShowScanner(false);
-          try { scanner.clear(); } catch (e) {}
           validateLink(decodedText.trim());
-        },
-        () => {}
-      );
-    } catch (e) {}
+        };
+
+        // Immediately start back camera directly without any buttons or dropdowns
+        try {
+          await qrCodeInstance.start({ facingMode: "environment" }, config, onScanSuccess, () => {});
+        } catch (camErr) {
+          // Fallback to front camera if back camera not available
+          await qrCodeInstance.start({ facingMode: "user" }, config, onScanSuccess, () => {});
+        }
+      } catch (e) {
+        console.warn('Camera direct start error:', e);
+      }
+    };
+
+    // Small delay to ensure DOM element is mounted
+    const timer = setTimeout(startDirectCamera, 50);
 
     return () => {
-      if (scanner) {
-        try { scanner.clear(); } catch (e) {}
+      isStopped = true;
+      clearTimeout(timer);
+      if (qrCodeInstance) {
+        try {
+          if (qrCodeInstance.isScanning) {
+            qrCodeInstance.stop().then(() => qrCodeInstance.clear()).catch(() => {});
+          } else {
+            qrCodeInstance.clear();
+          }
+        } catch (e) {}
       }
     };
   }, [showScanner]);
@@ -333,17 +358,34 @@ export default function LinksView() {
         </button>
       </div>
 
-      {/* QR Scanner Container */}
+      {/* Direct Instant Camera Scanner */}
       {showScanner && (
         <div className="bg-white rounded-[22px] p-4 sm:p-5 shadow-card border border-blue-100 mb-5 animate-fadeIn text-center">
           <div className="flex items-center justify-between mb-3">
-            <h4 className="text-xs font-bold text-slate-700">Scan Link QR Code</h4>
-            <button onClick={() => setShowScanner(false)} className="text-slate-400 hover:text-slate-600">
+            <h4 className="text-xs font-bold text-slate-700 flex items-center gap-1.5">
+              <Camera className="w-4 h-4 text-blue-600 animate-pulse" />
+              <span>Scanning for QR Code...</span>
+            </h4>
+            <button 
+              onClick={() => setShowScanner(false)} 
+              className="text-slate-400 hover:text-slate-600 p-1.5 hover:bg-slate-100 rounded-lg transition"
+            >
               <X className="w-4 h-4" />
             </button>
           </div>
-          <div id="link-qr-reader" className="w-full max-w-[280px] mx-auto overflow-hidden rounded-xl"></div>
-          <p className="text-[11px] text-slate-400 mt-2">Point camera at the Download QR on your laptop</p>
+          <div className="relative overflow-hidden rounded-2xl bg-black aspect-square max-w-[260px] mx-auto shadow-inner">
+            <div id="link-qr-reader" className="w-full h-full"></div>
+            {/* Viewfinder Aiming Overlay */}
+            <div className="absolute inset-0 border-2 border-blue-500/40 rounded-2xl pointer-events-none flex items-center justify-center">
+              <div className="w-48 h-48 border border-white/40 rounded-xl relative">
+                <div className="absolute -top-0.5 -left-0.5 w-4 h-4 border-t-2 border-l-2 border-blue-500 rounded-tl"></div>
+                <div className="absolute -top-0.5 -right-0.5 w-4 h-4 border-t-2 border-r-2 border-blue-500 rounded-tr"></div>
+                <div className="absolute -bottom-0.5 -left-0.5 w-4 h-4 border-b-2 border-l-2 border-blue-500 rounded-bl"></div>
+                <div className="absolute -bottom-0.5 -right-0.5 w-4 h-4 border-b-2 border-r-2 border-blue-500 rounded-br"></div>
+              </div>
+            </div>
+          </div>
+          <p className="text-[11px] text-slate-400 mt-2.5">Point camera directly at the laptop's Download QR</p>
         </div>
       )}
 

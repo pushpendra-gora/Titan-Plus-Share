@@ -1,23 +1,37 @@
 // API service for Titan Plus Share
 const getSavedServerUrl = () => {
-  const saved = localStorage.getItem('titan_server_url');
-  if (saved) return saved;
+  const isMobile = /Android|iPhone|iPad/i.test(navigator.userAgent);
 
-  // On Mobile, check if we have a paired laptop with a valid LAN IP
+  // On Laptop / Desktop PC: The Titan server is always running locally!
+  if (!isMobile) {
+    if (typeof window !== 'undefined' && window.location.protocol.startsWith('http') && window.location.port === '51733') {
+      return window.location.origin;
+    }
+    return 'http://127.0.0.1:51733';
+  }
+
+  // On Mobile: check explicitly saved laptop URL
+  const saved = localStorage.getItem('titan_server_url');
+  if (saved && !saved.includes('localhost') && !saved.includes('127.0.0.1')) {
+    return saved;
+  }
+
+  // On Mobile: check paired laptop devices
   try {
     const paired = JSON.parse(localStorage.getItem('titan_local_paired') || '[]');
-    const laptop = paired.find(d => d.ip && d.ip !== '127.0.0.1' && d.ip !== 'localhost' && d.ip !== 'LAN');
+    const laptop = paired.find(d => (d.deviceType === 'laptop' || !d.deviceType) && d.ip && d.ip !== '127.0.0.1' && d.ip !== 'localhost' && d.ip !== 'LAN');
     if (laptop) {
       return `http://${laptop.ip}:${laptop.port || 51733}`;
     }
   } catch (e) {}
 
-  // If running in browser with real host IP (not localhost)
-  if (window.location.hostname && window.location.hostname !== 'localhost' && window.location.hostname !== '127.0.0.1') {
+  if (saved) return saved;
+
+  if (typeof window !== 'undefined' && window.location.hostname && window.location.hostname !== 'localhost' && window.location.hostname !== '127.0.0.1') {
     return `http://${window.location.hostname}:51733`;
   }
 
-  return `${window.location.protocol}//${window.location.hostname}:51733`;
+  return 'http://127.0.0.1:51733';
 };
 
 export const getServerUrl = () => {
@@ -116,21 +130,34 @@ export async function authenticateDevice(payload) {
 }
 
 export async function getPairedDevices() {
+  const myId = getDeviceId();
+  const myName = getDeviceName();
+  const isMobile = /Android|iPhone|iPad/i.test(navigator.userAgent);
+
   const local = JSON.parse(localStorage.getItem('titan_local_paired') || '[]');
+  let combined = [...local];
+
   try {
     const res = await fetch(`${getServerUrl()}/api/pair/list`, { signal: AbortSignal.timeout(2000) });
     if (res.ok) {
       const serverList = await res.json();
-      const combined = [...serverList];
-      for (const loc of local) {
-        if (!combined.some(d => d.deviceId === loc.deviceId || d.deviceName === loc.deviceName)) {
-          combined.push(loc);
+      for (const item of serverList) {
+        if (!combined.some(d => d.deviceId === item.deviceId || d.deviceName === item.deviceName)) {
+          combined.push(item);
         }
       }
-      return combined;
     }
   } catch (e) {}
-  return local;
+
+  // Filter out self and incompatible device types
+  return combined.filter(d => {
+    if (d.deviceId === myId || d.deviceName === myName) return false;
+    // On mobile, show laptop targets
+    if (isMobile && d.deviceType === 'mobile' && d.deviceId === myId) return false;
+    // On laptop, show mobile targets
+    if (!isMobile && d.deviceType === 'laptop') return false;
+    return true;
+  });
 }
 
 export async function removePairedDevice(deviceId) {
@@ -207,36 +234,52 @@ export async function deleteLink(token) {
 
 function tryDecodeSelfContained(str) {
   try {
-    let clean = str.trim();
+    let clean = (str || '').trim();
     if (clean.includes('/d/')) {
       clean = clean.split('/d/')[1].split('/')[0].split('?')[0];
+    } else if (clean.includes('/api/links/download/')) {
+      clean = clean.split('/api/links/download/')[1].split('/')[0].split('?')[0];
     } else if (clean.includes('/')) {
       clean = clean.split('/').pop().split('?')[0];
     }
+
+    if (!clean || clean.length < 8) return null;
+
     let b64 = clean.replace(/-/g, '+').replace(/_/g, '/');
     while (b64.length % 4) b64 += '=';
-    const jsonStr = decodeURIComponent(
-      atob(b64)
-        .split('')
-        .map(c => '%' + ('00' + c.charCodeAt(0).toString(16)).slice(-2))
-        .join('')
-    );
+
+    let jsonStr = '';
+    try {
+      jsonStr = decodeURIComponent(escape(atob(b64)));
+    } catch (e1) {
+      try {
+        jsonStr = atob(b64);
+      } catch (e2) {
+        return null;
+      }
+    }
+
     const p = JSON.parse(jsonStr);
-    if (p && (p.n || p.i) && p.e) {
+    if (p && (p.n || p.i || p.fileName) && (p.e || p.expiresAt || p.h || p.laptopIp)) {
       const now = Date.now();
-      const isExpired = now > p.e;
-      const remainingSeconds = Math.max(0, Math.floor((p.e - now) / 1000));
+      const exp = p.e || p.expiresAt || (now + 10800000);
+      const isExpired = now > exp;
+      const remainingSeconds = Math.max(0, Math.floor((exp - now) / 1000));
+      const hostIp = p.h || p.laptopIp || '127.0.0.1';
+      const hostPort = p.p || p.laptopPort || 51733;
+      const token = p.i || p.token || clean;
+
       return {
-        token: p.i || clean,
-        fileName: p.n || 'Shared_File',
-        fileSize: p.s || 0,
-        type: p.t || 'file',
-        laptopIp: p.h || '127.0.0.1',
-        laptopPort: p.p || 51733,
-        directUrl: p.u || `http://${p.h || '127.0.0.1'}:${p.p || 51733}/api/links/download/${p.i || clean}`,
+        token,
+        fileName: p.n || p.fileName || 'Shared_File',
+        fileSize: p.s || p.fileSize || 0,
+        type: p.t || p.type || 'file',
+        laptopIp: hostIp,
+        laptopPort: hostPort,
+        directUrl: p.u || `http://${hostIp}:${hostPort}/api/links/download/${token}`,
         isExpired,
         remainingSeconds,
-        expiresAt: p.e
+        expiresAt: exp
       };
     }
   } catch (e) {}
@@ -245,6 +288,10 @@ function tryDecodeSelfContained(str) {
 
 export async function getLinkInfo(tokenOrUrl) {
   let token = (tokenOrUrl || '').trim();
+
+  if (!token || token.length < 4) {
+    throw new Error('Please paste a complete Titan Plus Share link or scan QR code.');
+  }
 
   // 1. First check if token itself is self-contained base64
   const selfContained = tryDecodeSelfContained(token);
@@ -273,7 +320,6 @@ export async function getLinkInfo(tokenOrUrl) {
       // If it's a LAN laptop IP, save it immediately as our active server
       if (parsed.hostname && parsed.hostname !== 'localhost' && !parsed.hostname.includes('vercel.app')) {
         setServerUrl(parsedOrigin);
-        // Also save to paired list
         try {
           const local = JSON.parse(localStorage.getItem('titan_local_paired') || '[]');
           if (!local.some(d => d.ip === parsed.hostname)) {
@@ -300,6 +346,11 @@ export async function getLinkInfo(tokenOrUrl) {
     } catch (e) {}
   }
 
+  // Check if incomplete URL was pasted
+  if ((token.startsWith('http://') || token.startsWith('https://')) && (!cleanToken || cleanToken === 'd' || cleanToken.length < 4)) {
+    throw new Error('Please paste the complete download link including token.');
+  }
+
   if (!targetUrl) {
     targetUrl = `${getServerUrl()}/api/links/info/${cleanToken}`;
   }
@@ -313,7 +364,23 @@ export async function getLinkInfo(tokenOrUrl) {
     }
   } catch (e) {}
 
-  // 3. Fallback to Vercel validator
+  // 3. Fallback: try paired laptop IP if available
+  try {
+    const paired = JSON.parse(localStorage.getItem('titan_local_paired') || '[]');
+    for (const d of paired) {
+      if (d.ip && d.ip !== '127.0.0.1') {
+        const altUrl = `http://${d.ip}:${d.port || 51733}/api/links/info/${cleanToken}`;
+        const altRes = await fetch(altUrl, { signal: AbortSignal.timeout(2000) });
+        if (altRes.ok) {
+          const altData = await altRes.json();
+          setServerUrl(`http://${d.ip}:${d.port || 51733}`);
+          return altData;
+        }
+      }
+    }
+  } catch (e) {}
+
+  // 4. Fallback to Vercel validator
   try {
     const vercelFallback = `https://titan-plus-share.vercel.app/api/links/info/${cleanToken}`;
     const vRes = await fetch(vercelFallback, { signal: AbortSignal.timeout(3500) });
@@ -323,7 +390,7 @@ export async function getLinkInfo(tokenOrUrl) {
     }
   } catch (e) {}
 
-  // 4. Fallback for direct IP links: if URL was valid http://<ip>:<port>/d/<token>, return downloadable metadata
+  // 5. Fallback for direct IP links: if URL was valid http://<ip>:<port>/d/<token>, return downloadable metadata
   if (parsedOrigin && cleanToken) {
     const directUrl = `${parsedOrigin}/api/links/download/${cleanToken}`;
     return {
