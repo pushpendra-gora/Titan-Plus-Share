@@ -167,18 +167,29 @@ module.exports = (req, res) => {
       ${isText ? `
         <div class="text-box" id="noteContent">${link.textContent || ''}</div>
         <button class="btn-download" id="copyBtn" onclick="copyText()">Copy Text</button>
+        <button class="btn-download" style="background:#475569;margin-top:10px;" onclick="downloadTxt()">Download as .txt file</button>
       ` : `
-        <a class="btn-download" href="${directDownload}">Download from Laptop</a>
+        <button class="btn-download" id="dlBtn" onclick="startDirectDownload()">Download File (${fileSizeMb > 0 ? fileSizeMb + ' MB' : link.fileSize + ' B'})</button>
+        <div style="margin-top:14px;">
+          <a id="directLink" href="${directDownload}" target="_blank" rel="noopener noreferrer" style="font-size:12px;color:#2563eb;text-decoration:underline;">
+            Direct Host Laptop Link (Wi-Fi)
+          </a>
+        </div>
       `}
 
       <div class="timer" id="countdown">Valid for 3 hours</div>
-      <div class="note">Transferred directly peer-to-peer from host laptop without server limits.</div>
+      <div class="note">Transferred directly from host laptop without size limits.</div>
     </div>
     <script>
+      function recordAck() {
+        try { fetch('/api/links/ack?token=${link.token}&selfToken=${token}').catch(() => {}); } catch(e) {}
+        try { fetch('http://${link.laptopIp}:${link.laptopPort}/api/links/ack?token=${link.token}', { method: 'POST', mode: 'no-cors' }).catch(() => {}); } catch(e) {}
+      }
+
       function copyText() {
         const text = document.getElementById('noteContent').innerText;
         navigator.clipboard.writeText(text);
-        try { fetch('/api/links/ack?token=${link.token}').catch(() => {}); } catch (e) {}
+        recordAck();
         const btn = document.getElementById('copyBtn');
         btn.innerText = 'Copied to Clipboard! ✓';
         btn.style.background = '#059669';
@@ -186,6 +197,34 @@ module.exports = (req, res) => {
           btn.innerText = 'Copy Text';
           btn.style.background = '#2563eb';
         }, 2000);
+      }
+
+      function downloadTxt() {
+        recordAck();
+        const text = document.getElementById('noteContent').innerText;
+        const blob = new Blob([text], { type: 'text/plain;charset=utf-8' });
+        const a = document.createElement('a');
+        a.href = URL.createObjectURL(blob);
+        a.download = '${(link.fileName || 'Shared_Text.txt').replace(/'/g, "\\'")}';
+        document.body.appendChild(a);
+        a.click();
+        document.body.removeChild(a);
+      }
+
+      function startDirectDownload() {
+        recordAck();
+        const btn = document.getElementById('dlBtn');
+        btn.innerText = 'Starting Download...';
+        btn.style.background = '#059669';
+
+        // Trigger direct browser navigation to start download
+        window.location.assign('${directDownload}');
+
+        // Fallback after 1.5s if Chrome blocks mixed-content from HTTPS
+        setTimeout(() => {
+          btn.innerText = 'Opening Host Server...';
+          window.location.href = 'http://${link.laptopIp}:${link.laptopPort}/d/${link.token}';
+        }, 1500);
       }
 
       let remaining = ${remainingSeconds};

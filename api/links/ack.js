@@ -1,4 +1,4 @@
-const { getLink } = require('../_store');
+const { getLink, recordAck } = require('../_store');
 
 module.exports = (req, res) => {
   res.setHeader('Access-Control-Allow-Origin', '*');
@@ -19,17 +19,14 @@ module.exports = (req, res) => {
     return res.status(400).json({ error: 'Token is required' });
   }
 
-  const link = getLink(token);
-  if (link) {
-    link.downloadCount = (link.downloadCount || 0) + 1;
-    link.status = 'downloaded';
-    link.lastDownloadedAt = Date.now();
-  }
+  const count = recordAck(token);
+  if (req.query.selfToken) recordAck(req.query.selfToken);
+  if (req.body?.selfToken) recordAck(req.body.selfToken);
 
   return res.status(200).json({
     success: true,
     token,
-    downloadCount: link ? link.downloadCount : 1
+    downloadCount: count
   });
 };
 

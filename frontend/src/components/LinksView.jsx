@@ -1,5 +1,5 @@
 import React, { useState, useEffect, useRef } from 'react';
-import { Link as LinkIcon, Download, CheckCircle, Clock, FileText, AlertCircle, RefreshCw, QrCode, Clipboard, Camera, X, Trash2, Copy, CheckCircle2, ArrowDownCircle, ExternalLink, Check, AlignLeft } from 'lucide-react';
+import { Link as LinkIcon, Download, CheckCircle, Clock, FileText, AlertCircle, RefreshCw, QrCode, Clipboard, Camera, X, Trash2, Copy, CheckCircle2, ArrowDownCircle, ExternalLink, Check, AlignLeft, Wifi } from 'lucide-react';
 import { getLinkInfo, formatBytes, getServerUrl, getLinksList, deleteLink, getDeviceId } from '../api';
 import { Html5Qrcode } from 'html5-qrcode';
 import confetti from 'canvas-confetti';
@@ -160,6 +160,11 @@ export default function LinksView() {
         } catch (e) {}
       }
       setFileInfo(info);
+
+      // If it's a text note, viewing it counts as accessed - send ACK to host laptop & cloud
+      if (info && info.type === 'text') {
+        sendLinkAck(info);
+      }
     } catch (err) {
       setError(err.message || 'Link expired or not reachable. Ensure the host laptop is online.');
     } finally {
@@ -167,15 +172,35 @@ export default function LinksView() {
     }
   };
 
+  const sendLinkAck = (info) => {
+    if (!info) return;
+    const token = info.token || info.id;
+    if (!token) return;
+
+    // 1. Direct LAN ACK to host laptop
+    if (info.laptopIp) {
+      const port = info.laptopPort || 51733;
+      fetch(`http://${info.laptopIp}:${port}/api/links/ack?token=${encodeURIComponent(token)}`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ token })
+      }).catch(() => {});
+      fetch(`http://${info.laptopIp}:${port}/api/links/download/${encodeURIComponent(token)}`).catch(() => {});
+    }
+
+    // 2. Direct to current server URL
+    fetch(`${getServerUrl()}/api/links/ack?token=${encodeURIComponent(token)}`).catch(() => {});
+
+    // 3. Direct to Vercel cloud relay
+    fetch(`https://titan-plus-share.vercel.app/api/links/ack?token=${encodeURIComponent(token)}`).catch(() => {});
+  };
+
   const handleCopyTextNote = (text, token) => {
     if (!text) return;
     navigator.clipboard.writeText(text);
     setTextCopied(true);
     confetti({ particleCount: 50, spread: 60, origin: { y: 0.6 } });
-    if (token) {
-      fetch(`${getServerUrl()}/api/links/download/${token}`).catch(() => {});
-      fetch(`https://titan-plus-share.vercel.app/api/links/ack?token=${token}`).catch(() => {});
-    }
+    sendLinkAck(fileInfo || { token });
     setTimeout(() => setTextCopied(false), 3000);
   };
 
@@ -329,6 +354,8 @@ export default function LinksView() {
         setDownloading(false);
         setDownloadSuccess(true);
         confetti({ particleCount: 70, spread: 60, origin: { y: 0.6 } });
+        sendLinkAck(fileInfo);
+        sendLinkAck(fileInfo);
         window.removeEventListener('titan-native-download-progress', handleNativeProgress);
         window.removeEventListener('titan-native-download-complete', handleNativeComplete);
       };
@@ -366,6 +393,7 @@ export default function LinksView() {
         setDownloading(false);
         setDownloadSuccess(true);
         confetti({ particleCount: 70, spread: 60, origin: { y: 0.6 } });
+        sendLinkAck(fileInfo);
 
         const blob = xhr.response;
 

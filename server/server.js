@@ -628,7 +628,8 @@ app.get('/api/links/list', async (req, res) => {
   for (const l of sharedLinks) {
     if (now <= l.expiresAt && (!l.downloadCount || l.status !== 'downloaded')) {
       try {
-        const vRes = await fetch(`${vercelRelay}/api/links/info?token=${l.id}`, { signal: AbortSignal.timeout(1200) });
+        const selfToken = makeSelfContainedToken(l, l.id);
+        const vRes = await fetch(`${vercelRelay}/api/links/info?token=${selfToken}&id=${l.id}`, { signal: AbortSignal.timeout(1500) });
         if (vRes.ok) {
           const vData = await vRes.json();
           if (vData.downloadCount > 0) {
@@ -673,6 +674,31 @@ app.get('/api/links/list', async (req, res) => {
     qrCode: l.qrCode || null
   }));
   res.json(list);
+});
+
+// Acknowledge a link download or viewing
+app.all('/api/links/ack', (req, res) => {
+  const token = req.query.token || req.body?.token;
+  if (!token) return res.status(400).json({ error: 'Token is required' });
+
+  const link = findLink(token);
+  if (link) {
+    link.downloadCount = (link.downloadCount || 0) + 1;
+    link.status = 'downloaded';
+    link.downloadProgress = 100;
+    link.lastDownloadedAt = Date.now();
+    saveJson(LINKS_FILE, sharedLinks);
+
+    broadcastWs('link-download-completed', {
+      token: link.id,
+      fileName: link.fileName,
+      downloadedAt: link.lastDownloadedAt
+    });
+    broadcastWs('links-updated', sharedLinks);
+    return res.json({ success: true, downloadCount: link.downloadCount });
+  }
+
+  res.json({ success: true, message: 'Acknowledged' });
 });
 
 app.delete('/api/links/:token', (req, res) => {
