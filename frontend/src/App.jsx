@@ -441,6 +441,10 @@ export default function App() {
               }
             } else if (data.event === 'links-updated') {
               window.dispatchEvent(new CustomEvent('titan-links-updated', { detail: data.payload }));
+            } else if (data.event === 'external-file-shared') {
+              if (data.payload) {
+                setSelectedItem(data.payload);
+              }
             } else if (data.event === 'incoming-transfer') {
               const isMobile = /Android|iPhone|iPad/i.test(navigator.userAgent);
               if (!isMobile) {

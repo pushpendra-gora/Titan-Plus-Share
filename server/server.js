@@ -1381,6 +1381,31 @@ function startDiscovery() {
 
 let pendingSharedItem = null;
 
+// Web Share Target endpoint (Handles Windows 11 system Share Sheet uploads)
+app.post('/share-target', upload.single('file'), (req, res) => {
+  if (req.file) {
+    pendingSharedItem = {
+      type: 'file',
+      name: req.file.originalname,
+      size: req.file.size,
+      path: req.file.path,
+      timestamp: Date.now()
+    };
+    broadcastWs('external-file-shared', pendingSharedItem);
+  } else if (req.body && (req.body.text || req.body.url)) {
+    const textContent = [req.body.title, req.body.text, req.body.url].filter(Boolean).join('\n');
+    pendingSharedItem = {
+      type: 'text',
+      name: 'Shared Text Note',
+      size: Buffer.byteLength(textContent, 'utf8'),
+      text: textContent,
+      timestamp: Date.now()
+    };
+    broadcastWs('external-file-shared', pendingSharedItem);
+  }
+  res.redirect('/');
+});
+
 app.post('/api/cli/share', (req, res) => {
   if (!isLocalRequest(req)) {
     return res.status(403).json({ error: 'CLI sharing is restricted to localhost' });
