@@ -1,5 +1,5 @@
 import React, { useState, useEffect, useRef } from 'react';
-import { X, Wifi, Link as LinkIcon, Laptop, Smartphone, CheckCircle, Copy, QrCode, ArrowRight, Clock, Plus, Camera, RefreshCw, Image, ArrowDownCircle, CheckCircle2, Radio } from 'lucide-react';
+import { X, Wifi, Link as LinkIcon, Laptop, Smartphone, CheckCircle, Copy, QrCode, ArrowRight, Clock, Plus, Camera, RefreshCw, Image, ArrowDownCircle, CheckCircle2, Radio, Eye } from 'lucide-react';
 import { formatBytes, generateShareLink, generateFolderShareLink, getPairedDevices, getOnlinePeers, getServerUrl, setServerUrl, getPairingInfo, getDeviceId, getDeviceName, authenticateDevice } from '../api';
 import { Capacitor } from '@capacitor/core';
 import { Html5Qrcode } from 'html5-qrcode';
@@ -287,6 +287,12 @@ export default function SendModal({ item, onClose, onStartTransfer }) {
       }
     };
 
+    const handleAccessed = (e) => {
+      if (e.detail?.token === linkData.token) {
+        setLiveDownload(prev => (prev?.status === 'completed' || prev?.status === 'downloading' ? prev : { percent: 0, status: 'accessed' }));
+      }
+    };
+
     const handleCompleted = (e) => {
       if (e.detail?.token === linkData.token) {
         setLiveDownload({ percent: 100, status: 'completed' });
@@ -294,11 +300,29 @@ export default function SendModal({ item, onClose, onStartTransfer }) {
       }
     };
 
+    const handleLinksUpdated = (e) => {
+      const list = e.detail || [];
+      const current = list.find(l => l.id === linkData.token);
+      if (current) {
+        if (current.status === 'downloaded' || current.downloadCount > 0) {
+          setLiveDownload({ percent: 100, status: 'completed' });
+        } else if (current.status === 'accessed') {
+          setLiveDownload(prev => (prev?.status === 'completed' || prev?.status === 'downloading' ? prev : { percent: 0, status: 'accessed' }));
+        } else if (current.status === 'downloading') {
+          setLiveDownload({ percent: current.downloadProgress || 50, status: 'downloading' });
+        }
+      }
+    };
+
     window.addEventListener('titan-link-progress', handleProgress);
+    window.addEventListener('titan-link-accessed', handleAccessed);
     window.addEventListener('titan-link-completed', handleCompleted);
+    window.addEventListener('titan-links-updated', handleLinksUpdated);
     return () => {
       window.removeEventListener('titan-link-progress', handleProgress);
+      window.removeEventListener('titan-link-accessed', handleAccessed);
       window.removeEventListener('titan-link-completed', handleCompleted);
+      window.removeEventListener('titan-links-updated', handleLinksUpdated);
     };
   }, [linkData]);
 
@@ -652,6 +676,12 @@ export default function SendModal({ item, onClose, onStartTransfer }) {
                     <span>Completed</span>
                   </span>
                 )}
+                {liveDownload?.status === 'accessed' && (
+                  <span className="text-[11px] font-bold text-indigo-600 flex items-center gap-1 bg-indigo-50 px-2.5 py-0.5 rounded-full border border-indigo-200">
+                    <Eye className="w-3.5 h-3.5" />
+                    <span>Link Opened</span>
+                  </span>
+                )}
                 {(!liveDownload || liveDownload.status === 'waiting') && (
                   <span className="text-[11px] text-amber-600 font-semibold bg-amber-50 px-2 py-0.5 rounded-full border border-amber-200">
                     Waiting for receiver...
@@ -677,6 +707,12 @@ export default function SendModal({ item, onClose, onStartTransfer }) {
               {liveDownload?.status === 'completed' && (
                 <p className="text-xs text-emerald-600 font-semibold mt-1">
                   Recipient has downloaded this file successfully!
+                </p>
+              )}
+
+              {liveDownload?.status === 'accessed' && (
+                <p className="text-xs text-indigo-600 font-semibold mt-1">
+                  Recipient has opened and verified this link! Ready to transfer.
                 </p>
               )}
 

@@ -1,4 +1,4 @@
-const { getLink, getAckCount } = require('../_store');
+const { getLink, getAckCount, isTokenAccessed } = require('../_store');
 
 module.exports = (req, res) => {
   res.setHeader('Access-Control-Allow-Origin', '*');
@@ -30,6 +30,7 @@ module.exports = (req, res) => {
   const remainingSeconds = Math.max(0, Math.floor((link.expiresAt - now) / 1000));
   const shortId = req.query.id || link.token;
   const dlCount = Math.max(link.downloadCount || 0, getAckCount(shortId), getAckCount(token));
+  const accessed = isTokenAccessed(shortId) || isTokenAccessed(token) || link.status === 'accessed';
 
   return res.status(200).json({
     token: link.token,
@@ -38,7 +39,7 @@ module.exports = (req, res) => {
     fileSize: link.fileSize,
     textContent: link.textContent || '',
     downloadCount: dlCount,
-    status: dlCount > 0 ? 'downloaded' : (isExpired ? 'expired' : 'pending'),
+    status: dlCount > 0 ? 'downloaded' : (accessed ? 'accessed' : (isExpired ? 'expired' : 'pending')),
     laptopIp: link.laptopIp,
     laptopPort: link.laptopPort,
     directUrl: link.directUrl,

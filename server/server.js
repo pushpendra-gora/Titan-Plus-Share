@@ -404,6 +404,7 @@ function startTunnel() {
         if (match && !publicTunnelUrl) {
           publicTunnelUrl = match[0].replace(/\/$/, '');
           console.log(`Cloudflare Remote Tunnel active: ${publicTunnelUrl}`);
+          updateLinksWithTunnel(publicTunnelUrl);
         }
       };
 
@@ -428,12 +429,39 @@ function startTunnel() {
   fallbackLocalTunnel();
 }
 
+function updateLinksWithTunnel(tunnelUrl) {
+  if (!tunnelUrl) return;
+  let changed = false;
+  for (const l of sharedLinks) {
+    const pub = `${tunnelUrl}/api/links/download/${l.id}`;
+    if (l.publicUrl !== pub) {
+      l.publicUrl = pub;
+      changed = true;
+    }
+  }
+  if (changed) {
+    saveJson(LINKS_FILE, sharedLinks);
+    broadcastWs('links-updated', sharedLinks);
+  }
+}
+
+async function ensureTunnelReady(maxWaitMs = 5000) {
+  if (publicTunnelUrl) return publicTunnelUrl;
+  const start = Date.now();
+  while (Date.now() - start < maxWaitMs) {
+    if (publicTunnelUrl) return publicTunnelUrl;
+    await new Promise((r) => setTimeout(r, 200));
+  }
+  return publicTunnelUrl;
+}
+
 async function fallbackLocalTunnel() {
   try {
     const localtunnel = require('localtunnel');
     const lt = await localtunnel({ port: PORT });
     publicTunnelUrl = lt.url.replace(/\/$/, '');
     console.log(`Localtunnel Remote URL active: ${publicTunnelUrl}`);
+    updateLinksWithTunnel(publicTunnelUrl);
     lt.on('close', () => {
       publicTunnelUrl = null;
     });
@@ -450,6 +478,7 @@ process.on('exit', () => {
 
 function makeSelfContainedToken(linkEntry, token) {
   const primaryIp = getLocalIpAddresses()[0];
+  const pubUrl = linkEntry.publicUrl || (publicTunnelUrl ? `${publicTunnelUrl}/api/links/download/${token}` : '');
   const min = {
     i: token,
     n: linkEntry.fileName,
@@ -459,7 +488,7 @@ function makeSelfContainedToken(linkEntry, token) {
     h: primaryIp,
     p: PORT,
     u: `http://${primaryIp}:${PORT}/api/links/download/${token}`,
-    w: publicTunnelUrl ? `${publicTunnelUrl}/api/links/download/${token}` : '',
+    w: pubUrl,
     e: linkEntry.expiresAt
   };
   return Buffer.from(JSON.stringify(min)).toString('base64url');
@@ -468,6 +497,7 @@ function makeSelfContainedToken(linkEntry, token) {
 async function registerWithVercel(linkEntry, token) {
   const vercelRelay = process.env.VERCEL_RELAY_URL || 'https://titan-plus-share.vercel.app';
   const primaryIp = getLocalIpAddresses()[0];
+  const pubUrl = linkEntry.publicUrl || (publicTunnelUrl ? `${publicTunnelUrl}/api/links/download/${token}` : '');
   const selfToken = makeSelfContainedToken(linkEntry, token);
 
   try {
@@ -481,7 +511,7 @@ async function registerWithVercel(linkEntry, token) {
       laptopIp: primaryIp,
       laptopPort: PORT,
       directUrl: `http://${primaryIp}:${PORT}/api/links/download/${token}`,
-      publicUrl: publicTunnelUrl ? `${publicTunnelUrl}/api/links/download/${token}` : '',
+      publicUrl: pubUrl,
       expiresAt: linkEntry.expiresAt
     };
     const response = await fetch(`${vercelRelay}/api/links/register`, {
@@ -527,6 +557,10 @@ app.post('/api/links/create', upload.single('file'), async (req, res) => {
       return res.status(400).json({ error: 'No content provided' });
     }
 
+    // Wait up to 5 seconds for tunnel so remote link works across cellular/external networks immediately
+    await ensureTunnelReady(5000);
+    linkEntry.publicUrl = publicTunnelUrl ? `${publicTunnelUrl}/api/links/download/${token}` : '';
+
     const primaryIp = getLocalIpAddresses()[0];
     const fullUrl = await registerWithVercel(linkEntry, token);
     const localUrl = `http://${primaryIp}:${PORT}/d/${token}`;
@@ -534,7 +568,6 @@ app.post('/api/links/create', upload.single('file'), async (req, res) => {
 
     linkEntry.url = fullUrl;
     linkEntry.localUrl = localUrl;
-    linkEntry.publicUrl = publicTunnelUrl ? `${publicTunnelUrl}/api/links/download/${token}` : '';
     linkEntry.qrCode = qrDataUrl;
     linkEntry.status = 'pending';
     linkEntry.downloadProgress = 0;
@@ -548,6 +581,7 @@ app.post('/api/links/create', upload.single('file'), async (req, res) => {
       token,
       url: fullUrl,
       localUrl,
+      publicUrl: linkEntry.publicUrl,
       qrCode: qrDataUrl,
       fileName: linkEntry.fileName,
       fileSize: linkEntry.fileSize,
@@ -615,6 +649,9 @@ app.post('/api/links/create-folder', upload.array('files'), async (req, res) => 
       downloadCount: 0
     };
 
+    await ensureTunnelReady(5000);
+    linkEntry.publicUrl = publicTunnelUrl ? `${publicTunnelUrl}/api/links/download/${token}` : '';
+
     const primaryIp = getLocalIpAddresses()[0];
     const fullUrl = await registerWithVercel(linkEntry, token);
     const localUrl = `http://${primaryIp}:${PORT}/d/${token}`;
@@ -622,7 +659,6 @@ app.post('/api/links/create-folder', upload.array('files'), async (req, res) => 
 
     linkEntry.url = fullUrl;
     linkEntry.localUrl = localUrl;
-    linkEntry.publicUrl = publicTunnelUrl ? `${publicTunnelUrl}/api/links/download/${token}` : '';
     linkEntry.qrCode = qrDataUrl;
     linkEntry.status = 'pending';
     linkEntry.downloadProgress = 0;
@@ -636,6 +672,7 @@ app.post('/api/links/create-folder', upload.array('files'), async (req, res) => 
       token,
       url: fullUrl,
       localUrl,
+      publicUrl: linkEntry.publicUrl,
       qrCode: qrDataUrl,
       fileName: linkEntry.fileName,
       fileSize: linkEntry.fileSize,
@@ -717,6 +754,12 @@ app.get('/api/links/list', async (req, res) => {
             l.lastDownloadedAt = Date.now();
             saveJson(LINKS_FILE, sharedLinks);
             broadcastWs('link-download-completed', { token: l.id, fileName: l.fileName, downloadedAt: l.lastDownloadedAt });
+            broadcastWs('links-updated', sharedLinks);
+          } else if (vData.status === 'accessed' && l.status !== 'downloaded') {
+            l.status = 'accessed';
+            saveJson(LINKS_FILE, sharedLinks);
+            broadcastWs('link-accessed', { token: l.id, fileName: l.fileName });
+            broadcastWs('links-updated', sharedLinks);
           }
         }
       } catch (e) {}
@@ -749,6 +792,7 @@ app.get('/api/links/list', async (req, res) => {
     url: l.url || `https://titan-plus-share.vercel.app/d/${l.id}`,
     localUrl: l.localUrl || `http://${primaryIp}:${PORT}/d/${l.id}`,
     directUrl: `http://${primaryIp}:${PORT}/api/links/download/${l.id}`,
+    publicUrl: l.publicUrl || (publicTunnelUrl ? `${publicTunnelUrl}/api/links/download/${l.id}` : ''),
     qrCode: l.qrCode || null
   }));
   res.json(list);
@@ -757,10 +801,24 @@ app.get('/api/links/list', async (req, res) => {
 // Acknowledge a link download or viewing
 app.all('/api/links/ack', (req, res) => {
   const token = req.query.token || req.body?.token;
+  const action = req.query.action || req.body?.action || 'download';
   if (!token) return res.status(400).json({ error: 'Token is required' });
 
   const link = findLink(token);
   if (link) {
+    if (action === 'validate' || action === 'open') {
+      if (link.status !== 'downloaded') {
+        link.status = 'accessed';
+        saveJson(LINKS_FILE, sharedLinks);
+        broadcastWs('link-accessed', {
+          token: link.id,
+          fileName: link.fileName
+        });
+        broadcastWs('links-updated', sharedLinks);
+      }
+      return res.json({ success: true, status: 'accessed', downloadCount: link.downloadCount || 0 });
+    }
+
     link.downloadCount = (link.downloadCount || 0) + 1;
     link.status = 'downloaded';
     link.downloadProgress = 100;
@@ -773,7 +831,7 @@ app.all('/api/links/ack', (req, res) => {
       downloadedAt: link.lastDownloadedAt
     });
     broadcastWs('links-updated', sharedLinks);
-    return res.json({ success: true, downloadCount: link.downloadCount });
+    return res.json({ success: true, status: 'downloaded', downloadCount: link.downloadCount });
   }
 
   res.json({ success: true, message: 'Acknowledged' });

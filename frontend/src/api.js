@@ -332,6 +332,7 @@ function tryDecodeSelfContained(str) {
         laptopIp: hostIp,
         laptopPort: hostPort,
         directUrl: p.u || `http://${hostIp}:${hostPort}/api/links/download/${token}`,
+        publicUrl: p.w || p.publicUrl || '',
         isExpired,
         remainingSeconds,
         expiresAt: exp
@@ -349,11 +350,24 @@ export async function getLinkInfo(tokenOrUrl) {
   }
 
   // 1. First check if token itself is self-contained base64
-  const selfContained = tryDecodeSelfContained(token);
+  let selfContained = tryDecodeSelfContained(token);
   if (selfContained && !selfContained.isExpired) {
-    if (selfContained.laptopIp && selfContained.laptopIp !== '127.0.0.1' && selfContained.laptopIp !== 'localhost') {
-      setServerUrl(`http://${selfContained.laptopIp}:${selfContained.laptopPort || 51733}`);
+    // If publicUrl is already embedded, return immediately
+    if (selfContained.publicUrl) {
+      return selfContained;
     }
+
+    // If publicUrl is not embedded in the token, check Vercel validator
+    try {
+      const vRes = await fetch(`https://titan-plus-share.vercel.app/api/links/info/${selfContained.token}`, { signal: AbortSignal.timeout(2500) });
+      if (vRes.ok) {
+        const vData = await vRes.json();
+        if (vData.publicUrl) {
+          selfContained.publicUrl = vData.publicUrl;
+        }
+      }
+    } catch (e) {}
+
     return selfContained;
   }
 

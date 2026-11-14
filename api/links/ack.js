@@ -10,6 +10,7 @@ module.exports = (req, res) => {
   }
 
   let token = req.query.token || req.body?.token;
+  const action = req.query.action || req.body?.action || 'download';
   if (!token && req.url) {
     const parts = req.url.split('?')[0].split('/');
     token = parts[parts.length - 1];
@@ -19,13 +20,14 @@ module.exports = (req, res) => {
     return res.status(400).json({ error: 'Token is required' });
   }
 
-  const count = recordAck(token);
-  if (req.query.selfToken) recordAck(req.query.selfToken);
-  if (req.body?.selfToken) recordAck(req.body.selfToken);
+  const count = recordAck(token, action);
+  if (req.query.selfToken) recordAck(req.query.selfToken, action);
+  if (req.body?.selfToken) recordAck(req.body.selfToken, action);
 
   return res.status(200).json({
     success: true,
     token,
+    action,
     downloadCount: count
   });
 };

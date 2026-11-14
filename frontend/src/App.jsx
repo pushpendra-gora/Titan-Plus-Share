@@ -434,6 +434,8 @@ export default function App() {
               }
             } else if (data.event === 'link-download-progress') {
               window.dispatchEvent(new CustomEvent('titan-link-progress', { detail: data.payload }));
+            } else if (data.event === 'link-accessed') {
+              window.dispatchEvent(new CustomEvent('titan-link-accessed', { detail: data.payload }));
             } else if (data.event === 'link-download-completed') {
               window.dispatchEvent(new CustomEvent('titan-link-completed', { detail: data.payload }));
               if (window.TitanNativeBridge && typeof window.TitanNativeBridge.showNotification === 'function') {

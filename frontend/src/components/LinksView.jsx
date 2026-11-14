@@ -1,5 +1,5 @@
 import React, { useState, useEffect, useRef } from 'react';
-import { Link as LinkIcon, Download, CheckCircle, Clock, FileText, AlertCircle, RefreshCw, QrCode, Clipboard, Camera, X, Trash2, Copy, CheckCircle2, ArrowDownCircle, ExternalLink, Check, AlignLeft, Wifi } from 'lucide-react';
+import { Link as LinkIcon, Download, CheckCircle, Clock, FileText, AlertCircle, RefreshCw, QrCode, Clipboard, Camera, X, Trash2, Copy, CheckCircle2, ArrowDownCircle, ExternalLink, Check, AlignLeft, Wifi, Eye } from 'lucide-react';
 import { getLinkInfo, formatBytes, getServerUrl, getLinksList, deleteLink, getDeviceId } from '../api';
 import { Html5Qrcode } from 'html5-qrcode';
 import confetti from 'canvas-confetti';
@@ -77,6 +77,20 @@ export default function LinksView() {
       }
     };
 
+    const handleAccessed = (e) => {
+      if (e.detail?.token) {
+        setMyLinks(prev => prev.map(l => {
+          if (l.id === e.detail.token && l.status !== 'downloaded') {
+            return {
+              ...l,
+              status: 'accessed'
+            };
+          }
+          return l;
+        }));
+      }
+    };
+
     const handleCompleted = (e) => {
       if (e.detail?.token) {
         setMyLinks(prev => prev.map(l => {
@@ -99,6 +113,7 @@ export default function LinksView() {
     };
 
     window.addEventListener('titan-link-progress', handleProgress);
+    window.addEventListener('titan-link-accessed', handleAccessed);
     window.addEventListener('titan-link-completed', handleCompleted);
     window.addEventListener('titan-links-updated', handleLinksUpdated);
 
@@ -106,6 +121,7 @@ export default function LinksView() {
 
     return () => {
       window.removeEventListener('titan-link-progress', handleProgress);
+      window.removeEventListener('titan-link-accessed', handleAccessed);
       window.removeEventListener('titan-link-completed', handleCompleted);
       window.removeEventListener('titan-links-updated', handleLinksUpdated);
       clearInterval(intv);
@@ -153,7 +169,7 @@ export default function LinksView() {
     try {
       const info = await getLinkInfo(target);
       if (info && info.type === 'text' && !info.textContent) {
-        const downloadUrl = info.directUrl || `${getServerUrl()}/api/links/download/${info.token}`;
+        const downloadUrl = info.publicUrl || info.directUrl || `${getServerUrl()}/api/links/download/${info.token}`;
         try {
           const txt = await fetch(downloadUrl).then(r => r.text());
           info.textContent = txt;
@@ -161,9 +177,10 @@ export default function LinksView() {
       }
       setFileInfo(info);
 
-      // If it's a text note, viewing it counts as accessed - send ACK to host laptop & cloud
+      // Instantly notify sender that the link was validated/opened
+      sendLinkAck(info, 'validate');
       if (info && info.type === 'text') {
-        sendLinkAck(info);
+        sendLinkAck(info, 'download');
       }
     } catch (err) {
       setError(err.message || 'Link expired or not reachable. Ensure the host laptop is online.');
@@ -172,27 +189,48 @@ export default function LinksView() {
     }
   };
 
-  const sendLinkAck = (info) => {
+  const sendLinkAck = (info, action = 'download') => {
     if (!info) return;
     const token = info.token || info.id;
     if (!token) return;
 
-    // 1. Direct LAN ACK to host laptop
-    if (info.laptopIp) {
-      const port = info.laptopPort || 51733;
-      fetch(`http://${info.laptopIp}:${port}/api/links/ack?token=${encodeURIComponent(token)}`, {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ token })
-      }).catch(() => {});
-      fetch(`http://${info.laptopIp}:${port}/api/links/download/${encodeURIComponent(token)}`).catch(() => {});
+    // 1. Direct Edge Tunnel ACK to host laptop (works across Cellular 5G/4G & external Wi-Fi)
+    if (info.publicUrl) {
+      try {
+        const tunnelOrigin = new URL(info.publicUrl).origin;
+        fetch(`${tunnelOrigin}/api/links/ack?token=${encodeURIComponent(token)}&action=${encodeURIComponent(action)}`, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ token, action })
+        }).catch(() => {});
+      } catch (e) {}
     }
 
-    // 2. Direct to current server URL
-    fetch(`${getServerUrl()}/api/links/ack?token=${encodeURIComponent(token)}`).catch(() => {});
+    // 2. Direct LAN ACK to host laptop (for same-network Wi-Fi / Hotspot)
+    if (info.laptopIp && info.laptopIp !== '127.0.0.1' && info.laptopIp !== 'localhost') {
+      const port = info.laptopPort || 51733;
+      fetch(`http://${info.laptopIp}:${port}/api/links/ack?token=${encodeURIComponent(token)}&action=${encodeURIComponent(action)}`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ token, action })
+      }).catch(() => {});
+    }
 
-    // 3. Direct to Vercel cloud relay
-    fetch(`https://titan-plus-share.vercel.app/api/links/ack?token=${encodeURIComponent(token)}`).catch(() => {});
+    // 3. Direct to current configured server URL
+    try {
+      fetch(`${getServerUrl()}/api/links/ack?token=${encodeURIComponent(token)}&action=${encodeURIComponent(action)}`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ token, action })
+      }).catch(() => {});
+    } catch (e) {}
+
+    // 4. Direct to Vercel cloud relay
+    fetch(`https://titan-plus-share.vercel.app/api/links/ack?token=${encodeURIComponent(token)}&action=${encodeURIComponent(action)}`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ token, action })
+    }).catch(() => {});
   };
 
   const handleCopyTextNote = (text, token) => {
@@ -356,8 +394,7 @@ export default function LinksView() {
         setDownloading(false);
         setDownloadSuccess(true);
         confetti({ particleCount: 70, spread: 60, origin: { y: 0.6 } });
-        sendLinkAck(fileInfo);
-        sendLinkAck(fileInfo);
+        sendLinkAck(fileInfo, 'download');
         window.removeEventListener('titan-native-download-progress', handleNativeProgress);
         window.removeEventListener('titan-native-download-complete', handleNativeComplete);
       };
@@ -395,7 +432,7 @@ export default function LinksView() {
         setDownloading(false);
         setDownloadSuccess(true);
         confetti({ particleCount: 70, spread: 60, origin: { y: 0.6 } });
-        sendLinkAck(fileInfo);
+        sendLinkAck(fileInfo, 'download');
 
         const blob = xhr.response;
 
@@ -690,6 +727,11 @@ export default function LinksView() {
                         <span className="inline-flex items-center gap-1 px-2.5 py-1 rounded-full text-[11px] font-bold bg-emerald-50 text-emerald-600 border border-emerald-200">
                           <CheckCircle2 className="w-3 h-3" />
                           <span>Downloaded</span>
+                        </span>
+                      ) : link.status === 'accessed' ? (
+                        <span className="inline-flex items-center gap-1 px-2.5 py-1 rounded-full text-[11px] font-bold bg-indigo-50 text-indigo-600 border border-indigo-200">
+                          <Eye className="w-3 h-3" />
+                          <span>Opened</span>
                         </span>
                       ) : isExpired ? (
                         <span className="inline-flex items-center gap-1 px-2.5 py-1 rounded-full text-[11px] font-bold bg-slate-100 text-slate-500">

@@ -18,25 +18,39 @@ function writeAcks(acks) {
   } catch (e) {}
 }
 
-function recordAck(token) {
+function recordAck(token, action = 'download') {
   if (!token) return 1;
   const acks = readAcks();
-  acks[token] = (acks[token] || 0) + 1;
+  if (action === 'validate' || action === 'open') {
+    acks[token + '_accessed'] = true;
+  } else {
+    acks[token] = (acks[token] || 0) + 1;
+  }
   writeAcks(acks);
 
   if (linksStore.has(token)) {
     const l = linksStore.get(token);
-    l.downloadCount = (l.downloadCount || 0) + 1;
-    l.status = 'downloaded';
-    l.lastDownloadedAt = Date.now();
+    if (action === 'validate' || action === 'open') {
+      if (l.status !== 'downloaded') l.status = 'accessed';
+    } else {
+      l.downloadCount = (l.downloadCount || 0) + 1;
+      l.status = 'downloaded';
+      l.lastDownloadedAt = Date.now();
+    }
   }
-  return acks[token];
+  return acks[token] || 1;
 }
 
 function getAckCount(token) {
   if (!token) return 0;
   const acks = readAcks();
   return acks[token] || (linksStore.get(token)?.downloadCount || 0);
+}
+
+function isTokenAccessed(token) {
+  if (!token) return false;
+  const acks = readAcks();
+  return !!acks[token + '_accessed'] || linksStore.get(token)?.status === 'accessed';
 }
 
 function cleanExpired() {
@@ -81,6 +95,7 @@ function decodeSelfContained(str) {
     if (parsed && (parsed.i || parsed.n)) {
       const shortToken = parsed.i || clean;
       const count = getAckCount(shortToken) || getAckCount(clean);
+      const accessed = isTokenAccessed(shortToken) || isTokenAccessed(clean);
       return {
         token: shortToken,
         fileName: parsed.n || 'Shared_File',
@@ -93,7 +108,7 @@ function decodeSelfContained(str) {
         publicUrl: parsed.w || '',
         expiresAt: parsed.e || (Date.now() + 3 * 3600 * 1000),
         downloadCount: count,
-        status: count > 0 ? 'downloaded' : 'pending'
+        status: count > 0 ? 'downloaded' : (accessed ? 'accessed' : 'pending')
       };
     }
   } catch (e) {}
@@ -125,6 +140,7 @@ module.exports = {
   },
   encodeSelfContained,
   recordAck,
-  getAckCount
+  getAckCount,
+  isTokenAccessed
 };
 
