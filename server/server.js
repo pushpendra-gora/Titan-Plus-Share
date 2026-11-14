@@ -292,14 +292,17 @@ app.get('/api/status', (req, res) => {
 app.get('/api/pair/info', async (req, res) => {
   const serverIps = getLocalIpAddresses();
   const primaryIp = serverIps[0] || '127.0.0.1';
-  const token = crypto.randomBytes(16).toString('hex');
+  const { deviceId, deviceName, deviceType } = req.query;
+  const token = deviceId || crypto.randomBytes(16).toString('hex');
   const payload = {
     appName: 'Titan Plus Share',
-    type: 'laptop',
-    name: os.hostname(),
+    type: deviceType || 'laptop',
+    name: deviceName || os.hostname(),
+    deviceId: token,
     ip: primaryIp,
     ips: serverIps,
     port: PORT,
+    serverUrl: `http://${primaryIp}:${PORT}`,
     token
   };
   const qrString = JSON.stringify(payload);
@@ -311,7 +314,7 @@ app.get('/api/pair/info', async (req, res) => {
 });
 
 app.post('/api/pair/authenticate', (req, res) => {
-  const { deviceId, deviceName, deviceType, ip } = req.body;
+  const { deviceId, deviceName, deviceType, ip, peerDevice } = req.body;
   if (!deviceId || !deviceName) {
     return res.status(400).json({ error: 'Device details missing' });
   }
@@ -324,7 +327,7 @@ app.post('/api/pair/authenticate', (req, res) => {
     deviceId,
     deviceName,
     deviceType: deviceType || 'mobile',
-    ip: clientIp,
+    ip: clientIp !== '127.0.0.1' ? clientIp : 'LAN',
     pairedAt: new Date().toISOString(),
     status: 'online'
   };
@@ -333,6 +336,24 @@ app.post('/api/pair/authenticate', (req, res) => {
     pairedDevices[existingIdx] = deviceRecord;
   } else {
     pairedDevices.push(deviceRecord);
+  }
+
+  // Also register peer device if supplied (enables 2-way mobile-to-mobile pairing in 1 step)
+  if (peerDevice && peerDevice.deviceId) {
+    const pIdx = pairedDevices.findIndex(d => d.deviceId === peerDevice.deviceId);
+    const peerRecord = {
+      deviceId: peerDevice.deviceId,
+      deviceName: peerDevice.deviceName || 'Mobile Device',
+      deviceType: peerDevice.deviceType || 'mobile',
+      ip: peerDevice.ip || clientIp,
+      pairedAt: new Date().toISOString(),
+      status: 'online'
+    };
+    if (pIdx >= 0) {
+      pairedDevices[pIdx] = peerRecord;
+    } else {
+      pairedDevices.push(peerRecord);
+    }
   }
 
   // Deduplicate
@@ -1277,7 +1298,7 @@ app.post('/api/transfer/send', upload.single('file'), (req, res) => {
 
 // Announce a transfer immediately BEFORE file bytes start uploading (Mobile alerted in 2ms)
 app.post('/api/transfer/init-push', (req, res) => {
-  const { targetDeviceId, senderName, fileName, fileSize, transferType, textContent, transferId: customTransferId } = req.body;
+  const { targetDeviceId, senderId, senderName, fileName, fileSize, transferType, textContent, transferId: customTransferId } = req.body;
   const primaryIp = getLocalIpAddresses()[0];
   const onlineList = Array.from(onlineClients.values());
   const targetDevice = pairedDevices.find(d => 
@@ -1293,10 +1314,11 @@ app.post('/api/transfer/init-push', (req, res) => {
 
   pendingPushes[transferId] = {
     transferId,
+    senderId: senderId || '',
     targetDeviceId,
     targetDeviceType: targetDevice?.deviceType || 'mobile',
     targetDeviceIp: targetDevice?.ip || '',
-    senderName: senderName || 'Windows PC',
+    senderName: senderName || 'Device',
     fileName: fileName || (isText ? 'Text Message' : 'File'),
     fileSize: fileSize || 0,
     transferType: isText ? 'text' : 'file',
@@ -1310,10 +1332,11 @@ app.post('/api/transfer/init-push', (req, res) => {
   // Broadcast immediately so mobile alerts and prepares receiver modal with 0ms delay!
   broadcastWs('incoming-file-push', {
     transferId,
+    senderId: senderId || '',
     targetDeviceId,
     targetDeviceType: targetDevice?.deviceType || 'mobile',
     targetDeviceIp: targetDevice?.ip || '',
-    senderName: senderName || 'Windows PC',
+    senderName: senderName || 'Device',
     fileName: fileName || (isText ? 'Text Message' : 'File'),
     fileSize: fileSize || 0,
     transferType: isText ? 'text' : 'file',
@@ -1329,9 +1352,9 @@ app.post('/api/transfer/init-push', (req, res) => {
   });
 });
 
-// Laptop Pushes to Mobile Device (Staged direct LAN transfer)
+// Laptop & Mobile Pushes to Mobile Device (Staged direct LAN transfer)
 app.post('/api/transfer/push', upload.single('file'), async (req, res) => {
-  const { targetDeviceId, senderName, originalName, transferType, textContent, filePath: bodyFilePath, transferId: existingId } = req.body;
+  const { targetDeviceId, senderId, senderName, originalName, transferType, textContent, filePath: bodyFilePath, transferId: existingId } = req.body;
   const primaryIp = getLocalIpAddresses()[0];
   const onlineList = Array.from(onlineClients.values());
   const targetDevice = pairedDevices.find(d => 
@@ -1439,10 +1462,11 @@ app.post('/api/transfer/push', upload.single('file'), async (req, res) => {
 
   pendingPushes[transferId] = {
     transferId,
+    senderId: senderId || '',
     targetDeviceId,
     targetDeviceType: targetDevice?.deviceType || 'mobile',
     targetDeviceIp: targetDevice?.ip || '',
-    senderName: senderName || 'Laptop',
+    senderName: senderName || 'Device',
     fileName: finalFileName,
     fileSize: finalFileSize,
     filePath: finalFilePath,
@@ -1456,10 +1480,11 @@ app.post('/api/transfer/push', upload.single('file'), async (req, res) => {
   // Broadcast to mobile NOW that the file is 100% staged and ready on disk
   broadcastWs('incoming-file-push', {
     transferId,
+    senderId: senderId || '',
     targetDeviceId,
     targetDeviceType: targetDevice?.deviceType || 'mobile',
     targetDeviceIp: targetDevice?.ip || '',
-    senderName: senderName || 'Laptop',
+    senderName: senderName || 'Device',
     fileName: finalFileName,
     fileSize: finalFileSize,
     serverUrl: `http://${primaryIp}:${PORT}`,

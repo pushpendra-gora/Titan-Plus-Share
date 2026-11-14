@@ -399,10 +399,17 @@ export default function App() {
             const data = JSON.parse(event.data);
             if (data.event === 'incoming-file-push') {
               const myId = getDeviceId();
-              const isMobile = /Android|iPhone|iPad/i.test(navigator.userAgent);
-              const shouldAccept = !data.payload.targetDeviceId || 
-                                   data.payload.targetDeviceId === myId ||
-                                   (isMobile && (data.payload.targetDeviceType === 'mobile' || !data.payload.targetDeviceType));
+              const isMobile = /Android|iPhone|iPad/i.test(navigator.userAgent) || !!window.TitanNativeBridge;
+
+              // Don't accept your own outgoing push!
+              if (data.payload.senderId && data.payload.senderId === myId) {
+                return;
+              }
+
+              // Accept if targeted to this device specifically, or if mobile broadcast
+              const shouldAccept = data.payload.targetDeviceId
+                ? data.payload.targetDeviceId === myId
+                : (isMobile && (data.payload.targetDeviceType === 'mobile' || !data.payload.targetDeviceType));
 
               if (shouldAccept) {
                 if (data.payload.serverUrl) {

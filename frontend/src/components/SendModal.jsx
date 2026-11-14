@@ -86,19 +86,24 @@ export default function SendModal({ item, onClose, onStartTransfer }) {
         payload = JSON.parse(text);
       } catch (e) {}
 
-      if (payload && (payload.appName === 'Titan Plus Share' || payload.token || payload.ip)) {
-        const laptopIp = payload.ip || (payload.ips && payload.ips[0]) || '127.0.0.1';
+      if (payload && (payload.appName === 'Titan Plus Share' || payload.token || payload.deviceId || payload.ip)) {
+        const peerType = payload.type || 'mobile';
+        const laptopIp = payload.ip || (payload.ips && payload.ips[0]) || '';
         const laptopPort = payload.port || 51733;
-        setServerUrl(`http://${laptopIp}:${laptopPort}`);
+        const targetUrl = payload.serverUrl || (laptopIp ? `http://${laptopIp}:${laptopPort}` : null);
+        if (targetUrl) {
+          setServerUrl(targetUrl);
+        }
 
         const localList = JSON.parse(localStorage.getItem('titan_local_paired') || '[]');
         const newDevice = {
-          deviceId: payload.token || ('lap_' + (payload.name || 'host')),
-          deviceName: payload.name || 'Laptop Server',
-          deviceType: payload.type || 'laptop',
-          ip: laptopIp,
-          ips: payload.ips || [laptopIp],
+          deviceId: payload.deviceId || payload.token || ('dev_' + (payload.name || 'peer')),
+          deviceName: payload.name || (peerType === 'laptop' ? 'Laptop Server' : 'Mobile Device'),
+          deviceType: peerType,
+          ip: laptopIp || 'LAN',
+          ips: payload.ips || (laptopIp ? [laptopIp] : ['LAN']),
           port: laptopPort,
+          serverUrl: targetUrl,
           pairedAt: Date.now()
         };
         const updated = localList.filter(d => d.deviceId !== newDevice.deviceId && d.deviceName !== newDevice.deviceName);
@@ -110,11 +115,12 @@ export default function SendModal({ item, onClose, onStartTransfer }) {
             deviceId: getDeviceId(),
             deviceName: getDeviceName(),
             deviceType: 'mobile',
-            pairingToken: payload.token
+            pairingToken: payload.token || payload.deviceId,
+            peerDevice: newDevice
           });
         } catch (e) {}
 
-        setScanMessage(`Paired with ${payload.name || 'Device'} successfully!`);
+        setScanMessage(`Paired with ${newDevice.deviceName} successfully!`);
         setScanning(false);
         await loadDevices();
         setTimeout(() => setView('devices'), 1000);

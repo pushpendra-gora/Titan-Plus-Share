@@ -33,6 +33,8 @@ export default function TransferProgressModal({ targetDevice, item, onClose }) {
 
     const isMobileClient = /Android|iPhone|iPad/i.test(navigator.userAgent);
     const isSendingFromLaptop = !isMobileClient;
+    const isTargetMobile = targetDevice.deviceType === 'mobile' || !targetDevice.deviceType;
+    const isPushTransfer = isSendingFromLaptop || isTargetMobile;
 
     const currentTransferId = `tr_${Date.now()}_${Math.random().toString(36).substring(2, 7)}`;
 
@@ -43,7 +45,7 @@ export default function TransferProgressModal({ targetDevice, item, onClose }) {
         name: item.name,
         size: item.size || (item.file ? item.file.size : 0),
         target: targetDevice.deviceName,
-        type: isSendingFromLaptop ? 'sending' : 'receiving',
+        type: isPushTransfer ? 'sending' : 'receiving',
         progress: 0,
         speed: '0 MB/s',
         status: 'active'
@@ -56,7 +58,7 @@ export default function TransferProgressModal({ targetDevice, item, onClose }) {
     formData.append('transferId', currentTransferId);
 
     let targetEndpoint = '';
-    if (isSendingFromLaptop) {
+    if (isPushTransfer) {
       // Announce transfer immediately to mobile device so it alerts right away (0ms delay)
       try {
         await fetch(`${getServerUrl()}/api/transfer/init-push`, {
@@ -64,8 +66,9 @@ export default function TransferProgressModal({ targetDevice, item, onClose }) {
           headers: { 'Content-Type': 'application/json' },
           body: JSON.stringify({
             transferId: currentTransferId,
+            senderId: localStorage.getItem('titan_device_id') || 'dev',
             targetDeviceId: targetDevice.deviceId || '',
-            senderName: localStorage.getItem('titan_device_name') || 'Windows PC',
+            senderName: localStorage.getItem('titan_device_name') || (isSendingFromLaptop ? 'Windows PC' : 'Mobile Device'),
             fileName: item.name || 'File',
             fileSize: item.size || (item.file ? item.file.size : 0),
             transferType: item.type === 'text' ? 'text' : 'file',
@@ -74,7 +77,7 @@ export default function TransferProgressModal({ targetDevice, item, onClose }) {
         });
       } catch (e) {}
 
-      // Laptop sending to Mobile: Stage file on local Laptop Server to push over LAN/WebSocket
+      // Staged direct transfer on server to push to target mobile over LAN/WebSocket
       targetEndpoint = `${getServerUrl()}/api/transfer/push`;
       formData.append('targetDeviceId', targetDevice.deviceId || '');
     } else {
@@ -217,12 +220,12 @@ export default function TransferProgressModal({ targetDevice, item, onClose }) {
         let respData = {};
         try { respData = JSON.parse(xhr.responseText); } catch (e) {}
 
-        if (isSendingFromLaptop) {
+        if (isPushTransfer) {
           const transferId = respData.transferId || currentTransferId;
           setWaitingMobile(true);
           setProgress(0);
           setSpeed('0 MB/s');
-          setStatusMessage(item.type === 'text' ? 'Waiting for Mobile Device to receive note...' : 'Staged on Titan engine. Waiting for Mobile Device to receive...');
+          setStatusMessage(item.type === 'text' ? `Waiting for ${targetDevice.deviceName || 'receiver'} to receive note...` : `Staged on Titan engine. Waiting for ${targetDevice.deviceName || 'receiver'} to receive...`);
 
           // Listen for Mobile download progress
           const handlePeerProg = (e) => {
