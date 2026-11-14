@@ -105,24 +105,34 @@ namespace TitanPlusShare
 
         static void SendFileToApp(string path)
         {
-            try
+            for (int attempt = 0; attempt < 5; attempt++)
             {
-                var req = (HttpWebRequest)WebRequest.Create(ServerUrl + "/api/cli/share");
-                req.Method = "POST";
-                req.ContentType = "application/json";
-                req.Timeout = 2000;
-
-                string json = "{\"filePath\":\"" + path.Replace("\\", "\\\\") + "\"}";
-                byte[] bytes = Encoding.UTF8.GetBytes(json);
-                req.ContentLength = bytes.Length;
-
-                using (var stream = req.GetRequestStream())
+                try
                 {
-                    stream.Write(bytes, 0, bytes.Length);
+                    var req = (HttpWebRequest)WebRequest.Create(ServerUrl + "/api/cli/share");
+                    req.Method = "POST";
+                    req.ContentType = "application/json";
+                    req.Timeout = 3000;
+
+                    string escapedPath = path.Replace("\\", "\\\\").Replace("\"", "\\\"");
+                    string json = "{\"filePath\":\"" + escapedPath + "\"}";
+                    byte[] bytes = Encoding.UTF8.GetBytes(json);
+                    req.ContentLength = bytes.Length;
+
+                    using (var stream = req.GetRequestStream())
+                    {
+                        stream.Write(bytes, 0, bytes.Length);
+                    }
+                    using (var resp = req.GetResponse())
+                    {
+                        return; // Successfully received by Titan Plus Share server
+                    }
                 }
-                using (req.GetResponse()) { }
+                catch
+                {
+                    Thread.Sleep(300);
+                }
             }
-            catch { }
         }
 
         static void LaunchAppWindow()

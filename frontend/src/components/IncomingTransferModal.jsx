@@ -78,6 +78,20 @@ export default function IncomingTransferModal({ incoming, onClose }) {
   }, [incoming]);
 
   const startPull = (downloadUrl, fileName) => {
+    let activeDownloadUrl = downloadUrl;
+    try {
+      const parsed = new URL(downloadUrl);
+      if (parsed.hostname === '127.0.0.1' || parsed.hostname === 'localhost') {
+        const srv = getServerHost();
+        if (srv && !srv.includes('127.0.0.1') && !srv.includes('localhost')) {
+          const srvUrl = new URL(srv);
+          parsed.hostname = srvUrl.hostname;
+          if (srvUrl.port) parsed.port = srvUrl.port;
+          activeDownloadUrl = parsed.toString();
+        }
+      }
+    } catch (e) {}
+
     setDownloading(true);
     setProgress(0);
     setTransferredBytes(0);
@@ -162,13 +176,13 @@ export default function IncomingTransferModal({ incoming, onClose }) {
       window.addEventListener('titan-native-download-complete', handleNativeDone);
       window.addEventListener('titan-native-download-error', handleNativeErr);
 
-      window.TitanNativeBridge.downloadDirect(downloadUrl, fileName);
+      window.TitanNativeBridge.downloadDirect(activeDownloadUrl, fileName);
       return;
     }
 
     const xhr = new XMLHttpRequest();
     xhrRef.current = xhr;
-    xhr.open('GET', downloadUrl, true);
+    xhr.open('GET', activeDownloadUrl, true);
     xhr.responseType = 'blob';
 
     xhr.onprogress = (e) => {

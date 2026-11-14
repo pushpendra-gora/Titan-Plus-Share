@@ -77,9 +77,6 @@ export default function TransferProgressModal({ targetDevice, item, onClose }) {
       // Laptop sending to Mobile: Stage file on local Laptop Server to push over LAN/WebSocket
       targetEndpoint = `${getServerUrl()}/api/transfer/push`;
       formData.append('targetDeviceId', targetDevice.deviceId || '');
-      if (item.path) {
-        formData.append('filePath', item.path);
-      }
     } else {
       // Mobile sending to Laptop: Send directly to Laptop Server host
       const validIp = targetDevice.ip && targetDevice.ip !== 'LAN' && targetDevice.ip !== '127.0.0.1' && targetDevice.ip !== 'localhost' ? targetDevice.ip : null;

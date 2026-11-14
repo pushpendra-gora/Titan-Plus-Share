@@ -89,8 +89,28 @@ function sanitizeFileName(name) {
 }
 
 function isLocalRequest(req) {
-  const ip = req.ip || req.connection?.remoteAddress || '';
-  return ip === '127.0.0.1' || ip === '::1' || ip === '::ffff:127.0.0.1' || ip.endsWith('127.0.0.1');
+  const rawIp = req.ip || req.connection?.remoteAddress || req.socket?.remoteAddress || '';
+  const cleanIp = rawIp.replace(/^.*:/, '');
+  if (cleanIp === '127.0.0.1' || cleanIp === 'localhost' || cleanIp === '::1' || cleanIp === '') return true;
+  if (rawIp === '::1' || rawIp === '127.0.0.1' || rawIp.endsWith('127.0.0.1')) return true;
+  const localIps = getLocalIpAddresses();
+  return localIps.includes(cleanIp) || localIps.includes(rawIp);
+}
+
+function getFolderSize(dirPath) {
+  let total = 0;
+  try {
+    const entries = fs.readdirSync(dirPath, { withFileTypes: true });
+    for (const entry of entries) {
+      const fullPath = path.join(dirPath, entry.name);
+      if (entry.isDirectory()) {
+        total += getFolderSize(fullPath);
+      } else if (entry.isFile()) {
+        total += fs.statSync(fullPath).size;
+      }
+    }
+  } catch (e) {}
+  return total;
 }
 
 function cleanupExpiredLinks() {
@@ -1248,7 +1268,11 @@ app.post('/api/transfer/send', upload.single('file'), (req, res) => {
 app.post('/api/transfer/init-push', (req, res) => {
   const { targetDeviceId, senderName, fileName, fileSize, transferType, textContent, transferId: customTransferId } = req.body;
   const primaryIp = getLocalIpAddresses()[0];
+  const onlineList = Array.from(onlineClients.values());
   const targetDevice = pairedDevices.find(d => 
+    d.deviceId === targetDeviceId || 
+    (d.ip && targetDeviceId && (targetDeviceId.includes(d.ip) || d.deviceId === targetDeviceId))
+  ) || onlineList.find(d => 
     d.deviceId === targetDeviceId || 
     (d.ip && targetDeviceId && (targetDeviceId.includes(d.ip) || d.deviceId === targetDeviceId))
   );
@@ -1295,10 +1319,14 @@ app.post('/api/transfer/init-push', (req, res) => {
 });
 
 // Laptop Pushes to Mobile Device (Staged direct LAN transfer)
-app.post('/api/transfer/push', upload.single('file'), (req, res) => {
+app.post('/api/transfer/push', upload.single('file'), async (req, res) => {
   const { targetDeviceId, senderName, originalName, transferType, textContent, filePath: bodyFilePath, transferId: existingId } = req.body;
   const primaryIp = getLocalIpAddresses()[0];
+  const onlineList = Array.from(onlineClients.values());
   const targetDevice = pairedDevices.find(d => 
+    d.deviceId === targetDeviceId || 
+    (d.ip && targetDeviceId && (targetDeviceId.includes(d.ip) || d.deviceId === targetDeviceId))
+  ) || onlineList.find(d => 
     d.deviceId === targetDeviceId || 
     (d.ip && targetDeviceId && (targetDeviceId.includes(d.ip) || d.deviceId === targetDeviceId))
   );
@@ -1346,18 +1374,50 @@ app.post('/api/transfer/push', upload.single('file'), (req, res) => {
   let finalFileSize = 0;
   let finalFileName = originalName;
 
+  const rawPath = Array.isArray(bodyFilePath) ? bodyFilePath[0] : bodyFilePath;
+  const cleanPath = rawPath ? path.normalize(typeof rawPath === 'string' ? rawPath.trim().replace(/^"(.*)"$/, '$1') : '') : null;
+
   if (req.file) {
     finalFilePath = req.file.path;
     finalFileSize = req.file.size;
     finalFileName = originalName || req.file.originalname;
-  } else if (bodyFilePath && fs.existsSync(bodyFilePath)) {
+  } else if (cleanPath && fs.existsSync(cleanPath)) {
     if (!isLocalRequest(req)) {
       return res.status(403).json({ error: 'Direct file path access is restricted to localhost' });
     }
-    finalFilePath = bodyFilePath;
-    const stat = fs.statSync(bodyFilePath);
-    finalFileSize = stat.size;
-    finalFileName = sanitizeFileName(originalName || path.basename(bodyFilePath));
+    const stat = fs.statSync(cleanPath);
+    if (stat.isDirectory()) {
+      // Packaging folder into zip archive for seamless mobile transfer
+      const safeFolderName = sanitizeFileName(originalName || path.basename(cleanPath));
+      const zipFileName = safeFolderName.endsWith('.zip') ? safeFolderName : `${safeFolderName}.zip`;
+      const zipPath = path.join(UPLOAD_DIR, `${Date.now()}-${zipFileName}`);
+
+      const output = fs.createWriteStream(zipPath);
+      const archive = archiver('zip', { zlib: { level: 6 } });
+
+      try {
+        await new Promise((resolve, reject) => {
+          output.on('close', resolve);
+          output.on('error', reject);
+          archive.on('error', reject);
+          archive.pipe(output);
+          archive.directory(cleanPath, false);
+          archive.finalize();
+        });
+
+        const zipStat = fs.statSync(zipPath);
+        finalFilePath = zipPath;
+        finalFileSize = zipStat.size;
+        finalFileName = zipFileName;
+      } catch (zipErr) {
+        console.error('Error zipping directory:', zipErr);
+        return res.status(500).json({ error: 'Failed to package folder into zip' });
+      }
+    } else {
+      finalFilePath = cleanPath;
+      finalFileSize = stat.size;
+      finalFileName = sanitizeFileName(originalName || path.basename(cleanPath));
+    }
   }
 
   if (!finalFilePath) {
@@ -1593,19 +1653,23 @@ app.post('/api/cli/share', (req, res) => {
     return res.status(403).json({ error: 'CLI sharing is restricted to localhost' });
   }
   const { filePath } = req.body;
-  if (!filePath || !fs.existsSync(filePath)) {
-    return res.status(400).json({ error: 'File path invalid' });
+  const rawPath = Array.isArray(filePath) ? filePath[0] : filePath;
+  let cleanFilePath = typeof rawPath === 'string' ? rawPath.trim().replace(/^"(.*)"$/, '$1') : '';
+  cleanFilePath = path.normalize(cleanFilePath);
+  if (!cleanFilePath || !fs.existsSync(cleanFilePath)) {
+    return res.status(400).json({ error: 'File path invalid: ' + cleanFilePath });
   }
 
-  const stat = fs.statSync(filePath);
+  const stat = fs.statSync(cleanFilePath);
   const isDir = stat.isDirectory();
-  const fileName = path.basename(filePath);
+  const fileName = path.basename(cleanFilePath);
+  const realSize = isDir ? getFolderSize(cleanFilePath) : stat.size;
 
   pendingSharedItem = {
     type: isDir ? 'folder' : 'file',
     name: fileName,
-    size: stat.size,
-    path: filePath,
+    size: realSize,
+    path: cleanFilePath,
     timestamp: Date.now()
   };
 
