@@ -263,6 +263,17 @@ function broadcastWs(event, payload) {
   }
 }
 
+function broadcastToDesktop(event, payload) {
+  const msg = JSON.stringify({ event, payload });
+  for (const client of wsClients) {
+    if (client.readyState === 1) {
+      const clientInfo = onlineClients.get(client);
+      if (clientInfo && clientInfo.deviceType === 'mobile') continue;
+      client.send(msg);
+    }
+  }
+}
+
 app.get('/api/status', (req, res) => {
   res.json({
     appName: 'Titan Plus Share',
@@ -1633,7 +1644,7 @@ app.post('/share-target', upload.single('file'), (req, res) => {
       path: req.file.path,
       timestamp: Date.now()
     };
-    broadcastWs('external-file-shared', pendingSharedItem);
+    broadcastToDesktop('external-file-shared', pendingSharedItem);
   } else if (req.body && (req.body.text || req.body.url)) {
     const textContent = [req.body.title, req.body.text, req.body.url].filter(Boolean).join('\n');
     pendingSharedItem = {
@@ -1643,7 +1654,7 @@ app.post('/share-target', upload.single('file'), (req, res) => {
       text: textContent,
       timestamp: Date.now()
     };
-    broadcastWs('external-file-shared', pendingSharedItem);
+    broadcastToDesktop('external-file-shared', pendingSharedItem);
   }
   res.redirect('/');
 });
@@ -1673,11 +1684,14 @@ app.post('/api/cli/share', (req, res) => {
     timestamp: Date.now()
   };
 
-  broadcastWs('external-file-shared', pendingSharedItem);
+  broadcastToDesktop('external-file-shared', pendingSharedItem);
   res.json({ success: true, item: pendingSharedItem });
 });
 
 app.get('/api/cli/pending-share', (req, res) => {
+  if (!isLocalRequest(req)) {
+    return res.json({ item: null });
+  }
   const item = pendingSharedItem;
   pendingSharedItem = null; // consume once
   res.json({ item });

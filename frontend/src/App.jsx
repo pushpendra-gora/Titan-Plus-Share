@@ -288,8 +288,11 @@ export default function App() {
     };
   }, []);
 
-  // Listen for Windows Explorer Context Menu Share events
+  // Listen for Windows Explorer Context Menu Share events (Desktop Windows only)
   useEffect(() => {
+    const isMobile = /Android|iPhone|iPad/i.test(navigator.userAgent) || !!window.TitanNativeBridge;
+    if (isMobile) return;
+
     const checkPendingShare = async () => {
       try {
         const res = await fetch(`${getServerUrl()}/api/cli/pending-share`);
@@ -444,7 +447,8 @@ export default function App() {
             } else if (data.event === 'links-updated') {
               window.dispatchEvent(new CustomEvent('titan-links-updated', { detail: data.payload }));
             } else if (data.event === 'external-file-shared') {
-              if (data.payload) {
+              const isMobile = /Android|iPhone|iPad/i.test(navigator.userAgent) || !!window.TitanNativeBridge;
+              if (!isMobile && data.payload) {
                 setSelectedItem(data.payload);
               }
             } else if (data.event === 'incoming-transfer') {
