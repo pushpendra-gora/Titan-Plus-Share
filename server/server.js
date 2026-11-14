@@ -386,13 +386,31 @@ app.delete('/api/pair/:deviceId', (req, res) => {
 
 let publicTunnelUrl = null;
 let tunnelProcess = null;
+let tunnelHealthFailures = 0;
+let isRestartingTunnel = false;
+
+function stopTunnel() {
+  if (tunnelProcess) {
+    try {
+      const pid = tunnelProcess.pid;
+      if (process.platform === 'win32') {
+        spawn('taskkill', ['/F', '/T', '/PID', pid.toString()], { windowsHide: true });
+      } else {
+        tunnelProcess.kill('SIGKILL');
+      }
+    } catch (e) {}
+    tunnelProcess = null;
+  }
+  publicTunnelUrl = null;
+}
 
 function startTunnel() {
+  if (isRestartingTunnel) return;
   const cloudflaredPath = path.join(__dirname, 'bin', 'cloudflared.exe');
   if (fs.existsSync(cloudflaredPath)) {
     try {
       console.log('Starting Cloudflare Quick Tunnel for remote cross-network links...');
-      const child = spawn(cloudflaredPath, ['tunnel', '--url', `http://127.0.0.1:${PORT}`], {
+      const child = spawn(cloudflaredPath, ['tunnel', '--url', `http://127.0.0.1:${PORT}`, '--no-autoupdate'], {
         windowsHide: true,
         stdio: ['ignore', 'pipe', 'pipe']
       });
@@ -418,7 +436,9 @@ function startTunnel() {
 
       child.on('exit', () => {
         publicTunnelUrl = null;
-        setTimeout(startTunnel, 6000);
+        if (!isRestartingTunnel) {
+          setTimeout(startTunnel, 4000);
+        }
       });
       return;
     } catch (e) {
@@ -429,6 +449,39 @@ function startTunnel() {
   fallbackLocalTunnel();
 }
 
+function checkTunnelHealth() {
+  if (!publicTunnelUrl || isRestartingTunnel) return;
+  const controller = new AbortController();
+  const timeoutId = setTimeout(() => controller.abort(), 4500);
+
+  fetch(`${publicTunnelUrl}/api/status`, { signal: controller.signal })
+    .then(async (res) => {
+      clearTimeout(timeoutId);
+      if (res.ok) {
+        tunnelHealthFailures = 0;
+      } else {
+        throw new Error(`HTTP ${res.status}`);
+      }
+    })
+    .catch((err) => {
+      clearTimeout(timeoutId);
+      tunnelHealthFailures++;
+      console.warn(`Cloudflare tunnel health probe #${tunnelHealthFailures} failed: ${err.message}`);
+      if (tunnelHealthFailures >= 2) {
+        console.warn('Public tunnel unresponsive or DNS expired. Automatically restarting Cloudflare tunnel...');
+        tunnelHealthFailures = 0;
+        isRestartingTunnel = true;
+        stopTunnel();
+        setTimeout(() => {
+          isRestartingTunnel = false;
+          startTunnel();
+        }, 1500);
+      }
+    });
+}
+
+setInterval(checkTunnelHealth, 20000);
+
 function updateLinksWithTunnel(tunnelUrl) {
   if (!tunnelUrl) return;
   let changed = false;
@@ -437,6 +490,7 @@ function updateLinksWithTunnel(tunnelUrl) {
     if (l.publicUrl !== pub) {
       l.publicUrl = pub;
       changed = true;
+      registerWithVercel(l, l.id).catch(() => {});
     }
   }
   if (changed) {
@@ -470,11 +524,9 @@ async function fallbackLocalTunnel() {
   }
 }
 
-process.on('exit', () => {
-  if (tunnelProcess) {
-    try { tunnelProcess.kill(); } catch (e) {}
-  }
-});
+process.on('exit', () => stopTunnel());
+process.on('SIGINT', () => { stopTunnel(); process.exit(0); });
+process.on('SIGTERM', () => { stopTunnel(); process.exit(0); });
 
 function makeSelfContainedToken(linkEntry, token) {
   const primaryIp = getLocalIpAddresses()[0];

@@ -349,33 +349,10 @@ export async function getLinkInfo(tokenOrUrl) {
     throw new Error('Please paste a complete Titan Plus Share link or scan QR code.');
   }
 
-  // 1. First check if token itself is self-contained base64
   let selfContained = tryDecodeSelfContained(token);
-  if (selfContained && !selfContained.isExpired) {
-    // If publicUrl is already embedded, return immediately
-    if (selfContained.publicUrl) {
-      return selfContained;
-    }
-
-    // If publicUrl is not embedded in the token, check Vercel validator
-    try {
-      const vRes = await fetch(`https://titan-plus-share.vercel.app/api/links/info/${selfContained.token}`, { signal: AbortSignal.timeout(2500) });
-      if (vRes.ok) {
-        const vData = await vRes.json();
-        if (vData.publicUrl) {
-          selfContained.publicUrl = vData.publicUrl;
-        }
-      }
-    } catch (e) {}
-
-    return selfContained;
-  }
-
-  let targetUrl = '';
+  let cleanToken = selfContained ? selfContained.token : token;
   let parsedOrigin = '';
-  let cleanToken = token;
 
-  // If user pasted a full URL (e.g. http://10.89.213.60:51733/d/... or https://...)
   if (token.startsWith('http://') || token.startsWith('https://')) {
     try {
       const parsed = new URL(token);
@@ -385,48 +362,42 @@ export async function getLinkInfo(tokenOrUrl) {
       } else if (token.includes('/')) {
         cleanToken = token.split('/').pop().split('?')[0];
       }
-
-      // If it's a LAN laptop IP, save it immediately as our active server
-      if (parsed.hostname && parsed.hostname !== 'localhost' && !parsed.hostname.includes('vercel.app')) {
-        setServerUrl(parsedOrigin);
-        try {
-          const local = JSON.parse(localStorage.getItem('titan_local_paired') || '[]');
-          if (!local.some(d => d.ip === parsed.hostname)) {
-            local.push({
-              deviceId: 'lap_' + parsed.hostname,
-              deviceName: 'Host Laptop (' + parsed.hostname + ')',
-              deviceType: 'laptop',
-              ip: parsed.hostname,
-              port: parsed.port || 51733,
-              pairedAt: Date.now()
-            });
-            localStorage.setItem('titan_local_paired', JSON.stringify(local));
-          }
-        } catch (e) {}
+      if (!selfContained) {
+        selfContained = tryDecodeSelfContained(cleanToken);
       }
-
-      // Check if cleanToken inside URL is self-contained
-      const subSelf = tryDecodeSelfContained(cleanToken);
-      if (subSelf && !subSelf.isExpired) {
-        return subSelf;
-      }
-
-      targetUrl = `${parsedOrigin}/api/links/info/${cleanToken}`;
     } catch (e) {}
   }
 
-  // Check if incomplete URL was pasted
-  if ((token.startsWith('http://') || token.startsWith('https://')) && (!cleanToken || cleanToken === 'd' || cleanToken.length < 4)) {
-    throw new Error('Please paste the complete download link including token.');
-  }
+  const lookupToken = (selfContained && selfContained.token) ? selfContained.token : cleanToken;
 
-  if (!targetUrl) {
-    targetUrl = `${getServerUrl()}/api/links/info/${cleanToken}`;
-  }
-
-  // 2. Fetch metadata from host server
+  // 1. ALWAYS query Vercel metadata first to obtain the active, live Cloudflare Edge tunnel URL!
   try {
-    const res = await fetch(targetUrl, { signal: AbortSignal.timeout(3500) });
+    const vRes = await fetch(`https://titan-plus-share.vercel.app/api/links/info/${lookupToken}`, { signal: AbortSignal.timeout(2500) });
+    if (vRes.ok) {
+      const vData = await vRes.json();
+      if (vData && (vData.fileName || vData.token)) {
+        if (selfContained) {
+          return {
+            ...selfContained,
+            ...vData,
+            publicUrl: vData.publicUrl || selfContained.publicUrl
+          };
+        }
+        return vData;
+      }
+    }
+  } catch (e) {}
+
+  // 2. Query direct laptop host if available on LAN
+  let targetUrl = '';
+  if (parsedOrigin && !parsedOrigin.includes('vercel.app')) {
+    targetUrl = `${parsedOrigin}/api/links/info/${cleanToken}`;
+  } else {
+    targetUrl = `${getServerUrl()}/api/links/info/${lookupToken}`;
+  }
+
+  try {
+    const res = await fetch(targetUrl, { signal: AbortSignal.timeout(2000) });
     if (res.ok) {
       const data = await res.json();
       return data;
@@ -438,8 +409,8 @@ export async function getLinkInfo(tokenOrUrl) {
     const paired = JSON.parse(localStorage.getItem('titan_local_paired') || '[]');
     for (const d of paired) {
       if (d.ip && d.ip !== '127.0.0.1') {
-        const altUrl = `http://${d.ip}:${d.port || 51733}/api/links/info/${cleanToken}`;
-        const altRes = await fetch(altUrl, { signal: AbortSignal.timeout(2000) });
+        const altUrl = `http://${d.ip}:${d.port || 51733}/api/links/info/${lookupToken}`;
+        const altRes = await fetch(altUrl, { signal: AbortSignal.timeout(1500) });
         if (altRes.ok) {
           const altData = await altRes.json();
           setServerUrl(`http://${d.ip}:${d.port || 51733}`);
@@ -448,6 +419,11 @@ export async function getLinkInfo(tokenOrUrl) {
       }
     }
   } catch (e) {}
+
+  // 4. Return decoded self-contained token if available
+  if (selfContained && !selfContained.isExpired) {
+    return selfContained;
+  }
 
   // 4. Fallback to Vercel validator
   try {

@@ -119,20 +119,44 @@ module.exports = {
   saveLink(token, data) {
     cleanExpired();
     linksStore.set(token, data);
+    if (data.token && data.token !== token) {
+      linksStore.set(data.token, data);
+    }
+    if (data.selfToken && data.selfToken !== token) {
+      linksStore.set(data.selfToken, data);
+    }
   },
   getLink(token) {
     cleanExpired();
-    if (linksStore.has(token)) {
-      const l = linksStore.get(token);
-      const count = getAckCount(token);
+    if (!token) return null;
+    let clean = token.toString().trim();
+    if (clean.includes('/d/')) clean = clean.split('/d/')[1].split('/')[0].split('?')[0];
+    if (clean.includes('/download/')) clean = clean.split('/download/')[1].split('/')[0].split('?')[0];
+    if (clean.includes('/')) clean = clean.split('/').pop().split('?')[0];
+
+    if (linksStore.has(clean)) {
+      const l = linksStore.get(clean);
+      const count = getAckCount(clean);
       if (count > (l.downloadCount || 0)) {
         l.downloadCount = count;
         l.status = 'downloaded';
       }
       return l;
     }
+
     // Attempt self-contained token decoding
-    return decodeSelfContained(token);
+    const decoded = decodeSelfContained(clean);
+    if (decoded && decoded.token && linksStore.has(decoded.token)) {
+      const live = linksStore.get(decoded.token);
+      return {
+        ...decoded,
+        publicUrl: live.publicUrl || decoded.publicUrl,
+        directUrl: live.directUrl || decoded.directUrl,
+        downloadCount: Math.max(decoded.downloadCount, live.downloadCount || 0),
+        status: (live.downloadCount > 0 || decoded.downloadCount > 0) ? 'downloaded' : (live.status || decoded.status)
+      };
+    }
+    return decoded;
   },
   getAll() {
     cleanExpired();

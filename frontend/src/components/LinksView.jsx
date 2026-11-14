@@ -399,8 +399,25 @@ export default function LinksView() {
         window.removeEventListener('titan-native-download-complete', handleNativeComplete);
       };
 
-      const handleNativeError = (e) => {
-        setError(e.detail?.error || 'Download failed on device');
+      const handleNativeError = async (e) => {
+        const errMsg = e.detail?.error || 'Download failed on device';
+        
+        // Auto-heal on DNS expiration or network change:
+        if (errMsg.includes('Unable to resolve host') || errMsg.includes('No address associated') || errMsg.includes('UnknownHostException')) {
+          try {
+            const vRes = await fetch(`https://titan-plus-share.vercel.app/api/links/info/${fileInfo.token}`, { signal: AbortSignal.timeout(3000) });
+            if (vRes.ok) {
+              const freshInfo = await vRes.json();
+              if (freshInfo && freshInfo.publicUrl && freshInfo.publicUrl !== downloadUrl) {
+                setFileInfo(freshInfo);
+                window.TitanNativeBridge.downloadDirect(freshInfo.publicUrl, freshInfo.fileName);
+                return;
+              }
+            }
+          } catch (retryErr) {}
+        }
+
+        setError(errMsg);
         setDownloading(false);
         window.removeEventListener('titan-native-download-progress', handleNativeProgress);
         window.removeEventListener('titan-native-download-error', handleNativeError);

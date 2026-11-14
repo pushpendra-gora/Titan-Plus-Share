@@ -524,10 +524,27 @@ public class MainActivity extends BridgeActivity {
                     conn = (HttpURLConnection) url.openConnection();
                     conn.setConnectTimeout(15000);
                     conn.setReadTimeout(120000);
+                    conn.setInstanceFollowRedirects(true);
                     conn.setRequestProperty("Accept-Encoding", "identity");
                     conn.connect();
 
                     int responseCode = conn.getResponseCode();
+                    if (responseCode == HttpURLConnection.HTTP_MOVED_PERM ||
+                        responseCode == HttpURLConnection.HTTP_MOVED_TEMP ||
+                        responseCode == 307 || responseCode == 308) {
+                        String newLoc = conn.getHeaderField("Location");
+                        if (newLoc != null && !newLoc.isEmpty()) {
+                            conn.disconnect();
+                            url = new URL(newLoc);
+                            conn = (HttpURLConnection) url.openConnection();
+                            conn.setConnectTimeout(15000);
+                            conn.setReadTimeout(120000);
+                            conn.setInstanceFollowRedirects(true);
+                            conn.setRequestProperty("Accept-Encoding", "identity");
+                            conn.connect();
+                            responseCode = conn.getResponseCode();
+                        }
+                    }
                     if (responseCode >= 200 && responseCode < 300) {
                         long fileLength = -1;
                         if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.N) {
@@ -679,10 +696,11 @@ public class MainActivity extends BridgeActivity {
                         });
                     } else {
                         if (tempPartFile != null && tempPartFile.exists()) tempPartFile.delete();
+                        final int finalCode = responseCode;
                         runOnUiThread(() -> {
                             if (getBridge() != null && getBridge().getWebView() != null) {
                                 getBridge().getWebView().evaluateJavascript(
-                                    "window.dispatchEvent(new CustomEvent('titan-native-download-error', { detail: { error: 'Server returned HTTP " + responseCode + "' } }));",
+                                    "window.dispatchEvent(new CustomEvent('titan-native-download-error', { detail: { error: 'Server returned HTTP " + finalCode + "' } }));",
                                     null
                                 );
                             }
