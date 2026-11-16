@@ -350,24 +350,24 @@ export default function TransferProgressModal({ targetDevice, item, onClose }) {
   };
 
   return (
-    <div className="fixed inset-0 z-50 flex items-center justify-center p-3 sm:p-4 bg-slate-900/40 backdrop-blur-sm animate-fadeIn">
-      <div className="w-full max-w-sm sm:max-w-md bg-white rounded-[26px] p-4 sm:p-6 shadow-modal border border-slate-100 text-center overflow-hidden">
+    <div className="fixed inset-0 z-50 flex items-center justify-center p-3 sm:p-4 bg-[#151B2D]/40 backdrop-blur-sm animate-fadeIn">
+      <div className="w-full max-w-sm sm:max-w-md bg-white rounded-[32px] p-5 sm:p-7 shadow-titan-modal border border-[#E8EBF3] text-center overflow-hidden">
         
         {/* Device Header */}
         <div className="flex items-center justify-between mb-4 sm:mb-5 min-w-0">
-          <div className="flex items-center gap-2.5 min-w-0">
-            <div className="w-9 h-9 rounded-xl bg-blue-50 text-blue-600 flex items-center justify-center border border-blue-100 shrink-0">
-              {targetDevice.deviceType === 'laptop' ? <Laptop className="w-4 h-4" /> : <Smartphone className="w-4 h-4" />}
+          <div className="flex items-center gap-3 min-w-0">
+            <div className="w-10 h-10 rounded-full bg-[#EEF1FF] text-[#5865E9] flex items-center justify-center shrink-0">
+              {targetDevice.deviceType === 'laptop' ? <Laptop className="w-5 h-5" /> : <Smartphone className="w-5 h-5" />}
             </div>
             <div className="text-left min-w-0">
-              <h4 className="text-sm font-semibold text-slate-800 truncate">{targetDevice.deviceName}</h4>
-              <p className="text-[11px] text-emerald-500 font-medium truncate">Direct LAN Stream</p>
+              <h4 className="text-sm font-bold text-[#151B2D] truncate">{targetDevice.deviceName}</h4>
+              <p className="text-[11px] text-[#16A05A] font-medium truncate">Direct LAN Stream</p>
             </div>
           </div>
           {(isDone || error) && (
             <button 
               onClick={onClose}
-              className="w-7 h-7 rounded-full flex items-center justify-center text-slate-400 hover:text-slate-600 hover:bg-slate-100 transition"
+              className="w-8 h-8 rounded-full flex items-center justify-center text-[#788395] hover:text-[#151B2D] hover:bg-[#F8F9FD] transition"
             >
               <X className="w-4 h-4" />
             </button>
@@ -379,14 +379,14 @@ export default function TransferProgressModal({ targetDevice, item, onClose }) {
           <div className="relative w-24 h-24 mx-auto flex items-center justify-center">
             <svg className="w-full h-full -rotate-90" viewBox="0 0 36 36">
               <path
-                className="text-slate-100"
+                className="text-[#EEF1FF]"
                 strokeWidth="3.5"
                 stroke="currentColor"
                 fill="none"
                 d="M18 2.0845 a 15.9155 15.9155 0 0 1 0 31.831 a 15.9155 15.9155 0 0 1 0 -31.831"
               />
               <path
-                className={error ? 'text-rose-500' : 'text-blue-600 transition-all duration-200'}
+                className={error ? 'text-[#F16B72]' : 'text-[#5865E9] transition-all duration-200'}
                 strokeDasharray={`${progress}, 100`}
                 strokeWidth="3.5"
                 strokeLinecap="round"
@@ -397,11 +397,11 @@ export default function TransferProgressModal({ targetDevice, item, onClose }) {
             </svg>
             <div className="absolute inset-0 flex flex-col items-center justify-center">
               {error ? (
-                <AlertCircle className="w-8 h-8 text-rose-500" />
+                <AlertCircle className="w-8 h-8 text-[#F16B72]" />
               ) : isDone ? (
-                <CheckCircle2 className="w-9 h-9 text-emerald-500 animate-scaleIn" />
+                <CheckCircle2 className="w-9 h-9 text-[#16A05A] animate-scaleIn" />
               ) : (
-                <span className="text-xl font-bold text-slate-800">{progress}%</span>
+                <span className="text-xl font-bold text-[#151B2D]">{progress}%</span>
               )}
             </div>
           </div>
@@ -409,18 +409,18 @@ export default function TransferProgressModal({ targetDevice, item, onClose }) {
 
         {/* File & Transfer Info */}
         <div className="mb-6">
-          <h4 className="font-semibold text-slate-800 text-sm mb-1 truncate px-4">{item.name}</h4>
+          <h4 className="font-bold text-[#151B2D] text-sm mb-1 truncate px-4">{item.name}</h4>
           
           {error ? (
-            <p className="text-xs text-rose-500 font-medium px-4">{error}</p>
+            <p className="text-xs text-[#F16B72] font-medium px-4">{error}</p>
           ) : (
             <>
-              <p className="text-xs text-slate-500 font-medium">
+              <p className="text-xs text-[#788395] font-medium">
                 {statusMessage ? statusMessage : `${formatBytes(transferredBytes)} / ${formatBytes(item.size)}`}
               </p>
               {!isDone && (
-                <div className="mt-2 inline-flex items-center gap-1.5 px-3 py-1 bg-slate-100 rounded-full text-[11px] font-semibold text-slate-600">
-                  <ArrowUpRight className="w-3 h-3 text-blue-600" />
+                <div className="mt-2 inline-flex items-center gap-1.5 px-3.5 py-1 bg-[#EEF1FF] rounded-full text-[11px] font-semibold text-[#5865E9]">
+                  <ArrowUpRight className="w-3 h-3" />
                   <span>Real Speed: {speed}</span>
                 </div>
               )}
@@ -433,14 +433,14 @@ export default function TransferProgressModal({ targetDevice, item, onClose }) {
           <div className="flex gap-2">
             <button
               onClick={startRealTransfer}
-              className="flex-1 py-3 bg-blue-600 hover:bg-blue-700 text-white font-semibold text-xs rounded-xl transition flex items-center justify-center gap-1.5"
+              className="flex-1 py-3 bg-[#5865E9] hover:bg-[#4c57d8] text-white font-semibold text-xs rounded-2xl transition flex items-center justify-center gap-1.5 shadow-titan-sm"
             >
               <RefreshCw className="w-3.5 h-3.5" />
               <span>Retry</span>
             </button>
             <button
               onClick={onClose}
-              className="py-3 px-4 bg-slate-100 hover:bg-slate-200 text-slate-600 font-semibold text-xs rounded-xl transition"
+              className="py-3 px-4 bg-[#F8F9FD] hover:bg-[#EEF1FF] text-[#788395] hover:text-[#151B2D] font-semibold text-xs rounded-2xl transition border border-[#E8EBF3]"
             >
               Close
             </button>
@@ -448,7 +448,7 @@ export default function TransferProgressModal({ targetDevice, item, onClose }) {
         ) : isDone ? (
           <button
             onClick={onClose}
-            className="w-full py-3.5 bg-blue-600 hover:bg-blue-700 text-white font-semibold text-sm rounded-xl transition shadow-lg shadow-blue-500/25"
+            className="w-full py-3.5 bg-[#5865E9] hover:bg-[#4c57d8] text-white font-semibold text-sm rounded-2xl transition shadow-titan-sm"
           >
             Transfer Completed
           </button>
@@ -456,13 +456,13 @@ export default function TransferProgressModal({ targetDevice, item, onClose }) {
           <div className="flex gap-2">
             <button
               onClick={onClose}
-              className="flex-1 py-3 bg-blue-600 hover:bg-blue-700 text-white font-semibold text-xs rounded-xl transition shadow-md shadow-blue-500/20"
+              className="flex-1 py-3 bg-[#5865E9] hover:bg-[#4c57d8] text-white font-semibold text-xs rounded-2xl transition shadow-titan-sm"
             >
               Keep Queued in Background
             </button>
             <button
               onClick={handleCancel}
-              className="py-3 px-4 bg-slate-100 hover:bg-slate-200 text-slate-500 font-medium text-xs rounded-xl transition"
+              className="py-3 px-4 bg-[#F8F9FD] hover:bg-[#EEF1FF] text-[#788395] font-medium text-xs rounded-2xl transition border border-[#E8EBF3]"
             >
               Cancel
             </button>
@@ -470,7 +470,7 @@ export default function TransferProgressModal({ targetDevice, item, onClose }) {
         ) : (
           <button
             onClick={handleCancel}
-            className="w-full py-3 bg-slate-100 hover:bg-slate-200 text-slate-600 font-medium text-xs rounded-xl transition"
+            className="w-full py-3 bg-[#F8F9FD] hover:bg-[#EEF1FF] text-[#788395] hover:text-[#F16B72] font-semibold text-xs rounded-2xl transition border border-[#E8EBF3]"
           >
             Cancel Transfer
           </button>

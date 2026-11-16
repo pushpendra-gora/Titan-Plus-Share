@@ -349,18 +349,18 @@ export default function SendModal({ item, onClose, onStartTransfer }) {
   };
 
   return (
-    <div className="fixed inset-0 z-50 flex items-end sm:items-center justify-center p-0 sm:p-4 bg-slate-900/40 backdrop-blur-sm animate-fadeIn">
-      <div className="w-full sm:max-w-md bg-white rounded-t-[28px] sm:rounded-[26px] p-4 sm:p-6 shadow-modal border border-slate-100 max-h-[90vh] overflow-y-auto pb-[max(20px,env(safe-area-inset-bottom))] sm:pb-6">
+    <div className="fixed inset-0 z-50 flex items-end sm:items-center justify-center p-0 sm:p-4 bg-[#151B2D]/40 backdrop-blur-sm animate-fadeIn">
+      <div className="w-full sm:max-w-md bg-white rounded-t-[32px] sm:rounded-[32px] p-5 sm:p-7 shadow-titan-modal border border-[#E8EBF3] max-h-[90vh] overflow-y-auto pb-[max(20px,env(safe-area-inset-bottom))] sm:pb-7">
         
         {/* Selected Content Card */}
-        <div className="flex items-center justify-between p-3.5 bg-slate-50/90 rounded-2xl border border-slate-100 mb-4 sm:mb-5">
-          <div className="flex items-center gap-3 min-w-0">
-            <div className="w-12 h-12 rounded-xl bg-blue-50 text-blue-600 flex items-center justify-center font-bold text-xs tracking-wider shrink-0 border border-blue-100">
+        <div className="flex items-center justify-between p-4 bg-[#F8F9FD] rounded-2xl border border-[#E8EBF3] mb-5">
+          <div className="flex items-center gap-3.5 min-w-0">
+            <div className="w-12 h-12 rounded-full bg-[#EEF1FF] text-[#5865E9] flex items-center justify-center font-bold text-xs tracking-wider shrink-0">
               {getItemBadge()}
             </div>
             <div className="min-w-0">
-              <h4 className="font-semibold text-slate-800 text-sm truncate">{item.name}</h4>
-              <p className="text-xs text-slate-500 font-medium">
+              <h4 className="font-bold text-[#151B2D] text-sm truncate">{item.name}</h4>
+              <p className="text-xs text-[#788395] font-medium">
                 {item.type === 'folder' 
                   ? `${item.fileCount || (item.files ? item.files.length : 1)} files • ${formatBytes(item.size)}`
                   : formatBytes(item.size)}
@@ -369,7 +369,7 @@ export default function SendModal({ item, onClose, onStartTransfer }) {
           </div>
           <button 
             onClick={onClose}
-            className="w-8 h-8 rounded-full flex items-center justify-center text-slate-400 hover:text-slate-600 hover:bg-slate-200/60 transition"
+            className="w-8 h-8 rounded-full flex items-center justify-center text-[#788395] hover:text-[#151B2D] hover:bg-white transition"
           >
             <X className="w-4 h-4" />
           </button>
@@ -378,45 +378,45 @@ export default function SendModal({ item, onClose, onStartTransfer }) {
         {/* View 1: Send How Menu */}
         {view === 'menu' && (
           <div>
-            <h3 className="text-sm font-semibold text-slate-700 mb-3 px-1">Send How?</h3>
+            <h3 className="text-xs font-bold uppercase tracking-wider text-[#788395] mb-3 px-1">Send How?</h3>
             <div className="space-y-3">
               
               {/* Option 1: Same Network */}
               <button
                 onClick={() => setView('devices')}
-                className="w-full flex items-center justify-between p-4 bg-blue-50/50 hover:bg-blue-50 border border-blue-100 rounded-2xl transition group text-left"
+                className="w-full flex items-center justify-between p-4 bg-[#EEF1FF]/60 hover:bg-[#EEF1FF] border border-[#dce1ff] rounded-[24px] transition group text-left"
               >
                 <div className="flex items-center gap-3.5">
-                  <div className="w-11 h-11 rounded-xl bg-blue-600 text-white flex items-center justify-center shadow-md shadow-blue-500/20">
+                  <div className="w-12 h-12 rounded-full bg-[#5865E9] text-white flex items-center justify-center shadow-titan-sm">
                     <Wifi className="w-5 h-5" />
                   </div>
                   <div>
-                    <div className="font-semibold text-slate-800 text-sm">Same Network (Fast)</div>
-                    <div className="text-xs text-slate-500">Send directly to paired devices on LAN</div>
+                    <div className="font-bold text-[#151B2D] text-sm">Same Network (Fast)</div>
+                    <div className="text-xs text-[#788395]">Send directly to paired devices on LAN</div>
                   </div>
                 </div>
-                <ArrowRight className="w-4 h-4 text-slate-400 group-hover:text-blue-600 group-hover:translate-x-1 transition" />
+                <ArrowRight className="w-4 h-4 text-[#788395] group-hover:text-[#5865E9] group-hover:translate-x-1 transition" />
               </button>
 
               {/* Option 2: Generate Link */}
               <button
                 onClick={handleGenerateLink}
                 disabled={loading}
-                className="w-full flex items-center justify-between p-4 bg-slate-50/80 hover:bg-slate-100/70 border border-slate-100 rounded-2xl transition group text-left"
+                className="w-full flex items-center justify-between p-4 bg-[#F8F9FD] hover:bg-[#EEF1FF]/40 border border-[#E8EBF3] rounded-[24px] transition group text-left"
               >
                 <div className="flex items-center gap-3.5">
-                  <div className="w-11 h-11 rounded-xl bg-sky-100 text-sky-600 flex items-center justify-center">
+                  <div className="w-12 h-12 rounded-full bg-[#F4EFFF] text-[#8755E8] flex items-center justify-center">
                     <LinkIcon className="w-5 h-5" />
                   </div>
                   <div>
-                    <div className="font-semibold text-slate-800 text-sm">Generate Link (Anywhere)</div>
-                    <div className="text-xs text-slate-500">Create a 3-hour download link to share</div>
+                    <div className="font-bold text-[#151B2D] text-sm">Generate Link (Anywhere)</div>
+                    <div className="text-xs text-[#788395]">Create a 3-hour download link to share</div>
                   </div>
                 </div>
                 {loading ? (
-                  <div className="w-4 h-4 border-2 border-blue-600 border-t-transparent rounded-full animate-spin mr-1" />
+                  <div className="w-4 h-4 border-2 border-[#5865E9] border-t-transparent rounded-full animate-spin mr-1" />
                 ) : (
-                  <ArrowRight className="w-4 h-4 text-slate-400 group-hover:text-sky-600 group-hover:translate-x-1 transition" />
+                  <ArrowRight className="w-4 h-4 text-[#788395] group-hover:text-[#8755E8] group-hover:translate-x-1 transition" />
                 )}
               </button>
             </div>
@@ -428,21 +428,21 @@ export default function SendModal({ item, onClose, onStartTransfer }) {
           <div>
             <div className="flex items-center justify-between mb-3 px-1">
               <div>
-                <h3 className="text-sm font-semibold text-slate-800">Direct Transfer (Same Network)</h3>
-                <p className="text-[11px] text-slate-400">Showing devices active on this Wi-Fi right now</p>
+                <h3 className="text-sm font-bold text-[#151B2D]">Direct Transfer (Same Network)</h3>
+                <p className="text-[11px] text-[#788395]">Showing devices active on this Wi-Fi right now</p>
               </div>
               <div className="flex items-center gap-2">
                 <button
                   onClick={loadDevices}
                   disabled={scanningDevices}
                   title="Scan Network"
-                  className="p-1.5 text-slate-400 hover:text-blue-600 hover:bg-blue-50 rounded-lg transition"
+                  className="p-1.5 text-[#788395] hover:text-[#5865E9] hover:bg-[#EEF1FF] rounded-lg transition"
                 >
-                  <RefreshCw className={`w-3.5 h-3.5 ${scanningDevices ? 'animate-spin text-blue-600' : ''}`} />
+                  <RefreshCw className={`w-3.5 h-3.5 ${scanningDevices ? 'animate-spin text-[#5865E9]' : ''}`} />
                 </button>
                 <button 
                   onClick={() => setView('menu')}
-                  className="text-xs text-blue-600 font-semibold hover:underline"
+                  className="text-xs text-[#5865E9] font-bold hover:underline"
                 >
                   Back
                 </button>
@@ -450,10 +450,10 @@ export default function SendModal({ item, onClose, onStartTransfer }) {
             </div>
 
             {scanningDevices && pairedDevices.length === 0 ? (
-              <div className="py-8 text-center bg-slate-50/70 rounded-2xl border border-slate-100 mb-3">
-                <div className="w-10 h-10 rounded-full border-2 border-blue-600 border-t-transparent animate-spin mx-auto mb-2" />
-                <p className="text-xs font-semibold text-slate-700">Scanning active Wi-Fi network...</p>
-                <p className="text-[11px] text-slate-400">Detecting reachable devices on this subnet</p>
+              <div className="py-8 text-center bg-[#F8F9FD] rounded-2xl border border-[#E8EBF3] mb-3">
+                <div className="w-10 h-10 rounded-full border-2 border-[#5865E9] border-t-transparent animate-spin mx-auto mb-2" />
+                <p className="text-xs font-bold text-[#151B2D]">Scanning active Wi-Fi network...</p>
+                <p className="text-[11px] text-[#788395]">Detecting reachable devices on this subnet</p>
               </div>
             ) : pairedDevices.length > 0 ? (
               <div className="space-y-2.5">
@@ -463,37 +463,37 @@ export default function SendModal({ item, onClose, onStartTransfer }) {
                     <button
                       key={dev.deviceId}
                       onClick={() => onStartTransfer(dev, item)}
-                      className="w-full flex items-center justify-between p-3.5 bg-white hover:bg-blue-50/50 border border-slate-100 hover:border-blue-200 rounded-2xl shadow-sm transition group text-left"
+                      className="w-full flex items-center justify-between p-3.5 bg-white hover:bg-[#F8F9FD] border border-[#E8EBF3] hover:border-[#5865E9]/30 rounded-2xl shadow-titan transition group text-left"
                     >
                       <div className="flex items-center gap-3">
-                        <div className={`w-10 h-10 rounded-xl flex items-center justify-center transition duration-200 ${
-                          isOnline ? 'bg-emerald-50 text-emerald-600 group-hover:bg-emerald-600 group-hover:text-white' : 'bg-blue-50 text-blue-600 group-hover:bg-blue-600 group-hover:text-white'
+                        <div className={`w-10 h-10 rounded-full flex items-center justify-center transition duration-200 ${
+                          isOnline ? 'bg-[#E8FAF0] text-[#16A05A]' : 'bg-[#EEF1FF] text-[#5865E9]'
                         }`}>
                           {dev.deviceType === 'laptop' ? <Laptop className="w-5 h-5" /> : <Smartphone className="w-5 h-5" />}
                         </div>
                         <div>
                           <div className="flex items-center gap-2">
-                            <span className="font-semibold text-slate-800 text-sm">{dev.deviceName}</span>
-                            <span className={`w-2 h-2 rounded-full inline-block ${isOnline ? 'bg-emerald-500 animate-pulse' : 'bg-blue-500'}`} />
+                            <span className="font-bold text-[#151B2D] text-sm">{dev.deviceName}</span>
+                            <span className={`w-2 h-2 rounded-full inline-block ${isOnline ? 'bg-[#16A05A] animate-pulse' : 'bg-[#5865E9]'}`} />
                           </div>
                           <span className="text-[11px] font-medium flex items-center gap-1.5 mt-0.5">
                             {isOnline ? (
-                              <span className="text-emerald-600 font-semibold">Online • App Open & Ready</span>
+                              <span className="text-[#16A05A] font-semibold">Online • Ready</span>
                             ) : (
-                              <span className="text-blue-600 font-semibold">On Wi-Fi • Tap to Wake & Send</span>
+                              <span className="text-[#5865E9] font-semibold">On Wi-Fi • Tap to Send</span>
                             )}
-                            {dev.ip && <span className="text-slate-400">({dev.ip})</span>}
+                            {dev.ip && <span className="text-[#788395]">({dev.ip})</span>}
                           </span>
                         </div>
                       </div>
-                      <ArrowRight className="w-4 h-4 text-slate-300 group-hover:text-blue-600 group-hover:translate-x-0.5 transition" />
+                      <ArrowRight className="w-4 h-4 text-[#788395] group-hover:text-[#5865E9] group-hover:translate-x-0.5 transition" />
                     </button>
                   );
                 })}
 
                 <button
                   onClick={openPairing}
-                  className="w-full py-2.5 px-3 border border-dashed border-slate-200 hover:border-blue-300 rounded-xl text-xs font-semibold text-slate-500 hover:text-blue-600 flex items-center justify-center gap-1.5 transition"
+                  className="w-full py-3 px-3 border border-dashed border-[#E8EBF3] hover:border-[#5865E9] rounded-2xl text-xs font-semibold text-[#788395] hover:text-[#5865E9] flex items-center justify-center gap-1.5 transition"
                 >
                   <Plus className="w-3.5 h-3.5" />
                   <span>Pair Another Device via QR</span>
@@ -501,25 +501,25 @@ export default function SendModal({ item, onClose, onStartTransfer }) {
               </div>
             ) : (
               /* REAL EMPTY STATE WHEN NO DEVICES DETECTED ON THIS NETWORK */
-              <div className="p-6 bg-slate-50/80 rounded-2xl border border-slate-100 text-center">
-                <div className="w-14 h-14 rounded-2xl bg-blue-50 border border-blue-100 text-blue-600 flex items-center justify-center mx-auto mb-3 shadow-sm">
-                  <Radio className="w-7 h-7 text-blue-500 animate-pulse" />
+              <div className="p-6 bg-[#F8F9FD] rounded-2xl border border-[#E8EBF3] text-center">
+                <div className="w-14 h-14 rounded-full bg-[#EEF1FF] text-[#5865E9] flex items-center justify-center mx-auto mb-3">
+                  <Radio className="w-7 h-7 text-[#5865E9] animate-pulse" />
                 </div>
-                <h4 className="font-bold text-slate-800 text-sm mb-1">No Active Devices Detected</h4>
-                <p className="text-xs text-slate-500 mb-4 max-w-xs mx-auto">
+                <h4 className="font-bold text-[#151B2D] text-sm mb-1">No Active Devices Detected</h4>
+                <p className="text-xs text-[#788395] mb-4 max-w-xs mx-auto">
                   Ensure both your laptop and mobile device are connected to the exact same Wi-Fi network.
                 </p>
                 <div className="flex gap-2">
                   <button
                     onClick={loadDevices}
-                    className="flex-1 py-2.5 bg-slate-100 hover:bg-slate-200 text-slate-700 rounded-xl text-xs font-semibold flex items-center justify-center gap-1.5 transition"
+                    className="flex-1 py-2.5 bg-white hover:bg-[#F8F9FD] text-[#151B2D] rounded-xl text-xs font-semibold flex items-center justify-center gap-1.5 transition border border-[#E8EBF3]"
                   >
                     <RefreshCw className="w-3.5 h-3.5" />
                     <span>Scan Again</span>
                   </button>
                   <button
                     onClick={openPairing}
-                    className="flex-1 py-2.5 bg-blue-600 hover:bg-blue-700 text-white rounded-xl text-xs font-semibold flex items-center justify-center gap-1.5 shadow-md shadow-blue-500/25 transition"
+                    className="flex-1 py-2.5 bg-[#5865E9] hover:bg-[#4c57d8] text-white rounded-xl text-xs font-semibold flex items-center justify-center gap-1.5 shadow-titan-sm transition"
                   >
                     <QrCode className="w-3.5 h-3.5" />
                     <span>Pair via QR</span>
@@ -534,10 +534,10 @@ export default function SendModal({ item, onClose, onStartTransfer }) {
         {view === 'pairing' && (
           <div className="text-center py-1">
             <div className="flex items-center justify-between mb-3 px-1">
-              <h3 className="text-sm font-semibold text-slate-700">Pair Device via QR Code</h3>
+              <h3 className="text-sm font-bold text-[#151B2D]">Pair Device via QR Code</h3>
               <button 
                 onClick={() => setView('devices')}
-                className="text-xs text-blue-600 font-semibold hover:underline"
+                className="text-xs text-[#5865E9] font-bold hover:underline"
               >
                 Back
               </button>
@@ -558,16 +558,16 @@ export default function SendModal({ item, onClose, onStartTransfer }) {
               <div className="flex items-center gap-2">
                 <button
                   onClick={() => setScanning(!scanning)}
-                  className="flex-1 py-2.5 bg-blue-50 hover:bg-blue-100 text-blue-700 rounded-xl text-xs font-semibold flex items-center justify-center gap-1.5 border border-blue-200 transition"
+                  className="flex-1 py-2.5 bg-[#EEF1FF] hover:bg-[#5865E9] text-[#5865E9] hover:text-white rounded-2xl text-xs font-semibold flex items-center justify-center gap-1.5 transition"
                 >
                   <Camera className="w-4 h-4" />
                   <span>{scanning ? 'Close Camera' : 'Camera Scan'}</span>
                 </button>
                 <button
                   onClick={() => imageInputRef.current?.click()}
-                  className="px-3.5 py-2.5 bg-white hover:bg-slate-100 text-slate-700 border border-slate-200 rounded-xl text-xs font-semibold flex items-center gap-1.5 transition shadow-sm"
+                  className="px-4 py-2.5 bg-white hover:bg-[#F8F9FD] text-[#151B2D] border border-[#E8EBF3] rounded-2xl text-xs font-semibold flex items-center gap-1.5 transition shadow-titan-sm"
                 >
-                  <Image className="w-4 h-4 text-blue-600" />
+                  <Image className="w-4 h-4 text-[#5865E9]" />
                   <span>Choose Photo</span>
                 </button>
               </div>
@@ -576,19 +576,19 @@ export default function SendModal({ item, onClose, onStartTransfer }) {
                 <div className="mt-3 relative overflow-hidden rounded-2xl bg-black aspect-square max-w-[260px] mx-auto shadow-inner">
                   <div id={modalScannerDomId.current} className="w-full h-full min-h-[240px]"></div>
                   {/* Viewfinder Aiming Overlay */}
-                  <div className="absolute inset-0 border-2 border-blue-500/40 rounded-2xl pointer-events-none flex items-center justify-center">
+                  <div className="absolute inset-0 border-2 border-[#5865E9]/40 rounded-2xl pointer-events-none flex items-center justify-center">
                     <div className="w-48 h-48 border border-white/40 rounded-xl relative">
-                      <div className="absolute -top-0.5 -left-0.5 w-4 h-4 border-t-2 border-l-2 border-blue-500 rounded-tl"></div>
-                      <div className="absolute -top-0.5 -right-0.5 w-4 h-4 border-t-2 border-r-2 border-blue-500 rounded-tr"></div>
-                      <div className="absolute -bottom-0.5 -left-0.5 w-4 h-4 border-b-2 border-l-2 border-blue-500 rounded-bl"></div>
-                      <div className="absolute -bottom-0.5 -right-0.5 w-4 h-4 border-b-2 border-r-2 border-blue-500 rounded-br"></div>
+                      <div className="absolute -top-0.5 -left-0.5 w-4 h-4 border-t-2 border-l-2 border-[#5865E9] rounded-tl"></div>
+                      <div className="absolute -top-0.5 -right-0.5 w-4 h-4 border-t-2 border-r-2 border-[#5865E9] rounded-tr"></div>
+                      <div className="absolute -bottom-0.5 -left-0.5 w-4 h-4 border-b-2 border-l-2 border-[#5865E9] rounded-bl"></div>
+                      <div className="absolute -bottom-0.5 -right-0.5 w-4 h-4 border-b-2 border-r-2 border-[#5865E9] rounded-br"></div>
                     </div>
                   </div>
                 </div>
               )}
 
               {scanMessage && (
-                <div className="mt-3 p-2.5 bg-emerald-50 text-emerald-700 text-xs font-semibold rounded-xl flex items-center justify-center gap-1.5">
+                <div className="mt-3 p-3 bg-[#E8FAF0] text-[#16A05A] text-xs font-semibold rounded-2xl border border-[#c9f2dc] flex items-center justify-center gap-1.5">
                   <CheckCircle className="w-4 h-4" />
                   <span>{scanMessage}</span>
                 </div>
@@ -597,18 +597,18 @@ export default function SendModal({ item, onClose, onStartTransfer }) {
 
             {/* Display QR code for other device to scan */}
             {pairingData?.qrCode ? (
-              <div className="p-3.5 sm:p-4 bg-slate-50 rounded-2xl border border-slate-100 inline-block mb-3 max-w-full overflow-hidden">
-                <img src={pairingData.qrCode} alt="Pairing QR" className="w-36 sm:w-44 h-36 sm:h-44 max-w-full rounded-xl mx-auto shadow-sm border border-slate-200 object-contain" />
-                <p className="text-[11px] text-slate-500 mt-2 font-medium truncate">
+              <div className="p-4 bg-[#F8F9FD] rounded-2xl border border-[#E8EBF3] inline-block mb-3 max-w-full overflow-hidden">
+                <img src={pairingData.qrCode} alt="Pairing QR" className="w-36 sm:w-44 h-36 sm:h-44 max-w-full rounded-xl mx-auto shadow-sm bg-white p-2 border border-[#E8EBF3] object-contain" />
+                <p className="text-[11px] text-[#788395] mt-2 font-medium truncate">
                   {pairingData.payload?.name} ({pairingData.payload?.ip})
                 </p>
-                <p className="text-[10px] text-slate-400 mt-0.5">
+                <p className="text-[10px] text-[#788395]/70 mt-0.5">
                   Scan this code using Titan Plus Share on your other device
                 </p>
               </div>
             ) : (
               <div className="py-8">
-                <RefreshCw className="w-6 h-6 animate-spin text-blue-600 mx-auto" />
+                <RefreshCw className="w-6 h-6 animate-spin text-[#5865E9] mx-auto" />
               </div>
             )}
 
@@ -617,7 +617,7 @@ export default function SendModal({ item, onClose, onStartTransfer }) {
                 await loadDevices();
                 setView('devices');
               }}
-              className="w-full py-2.5 bg-slate-100 hover:bg-slate-200 text-slate-700 font-semibold text-xs rounded-xl transition mt-2"
+              className="w-full py-3 bg-[#EEF1FF] hover:bg-[#5865E9] text-[#5865E9] hover:text-white font-semibold text-xs rounded-2xl transition mt-2"
             >
               Done / Check Paired Devices
             </button>
@@ -627,31 +627,31 @@ export default function SendModal({ item, onClose, onStartTransfer }) {
         {/* View 4: Download Link Generated */}
         {view === 'link' && linkData && (
           <div className="text-center py-1">
-            <div className="inline-flex items-center gap-1.5 px-3 py-1 bg-emerald-50 text-emerald-600 rounded-full text-xs font-semibold mb-4">
+            <div className="inline-flex items-center gap-1.5 px-3.5 py-1 bg-[#E8FAF0] text-[#16A05A] rounded-full text-xs font-bold mb-4 border border-[#c9f2dc]">
               <CheckCircle className="w-3.5 h-3.5" />
               <span>Download Link Generated</span>
             </div>
 
             {/* Link Box */}
-            <div className="flex items-center gap-1.5 sm:gap-2 p-2 sm:p-2.5 bg-slate-50 border border-slate-200 rounded-2xl mb-4 min-w-0">
-              <LinkIcon className="w-4 h-4 text-blue-600 shrink-0 ml-1" />
+            <div className="flex items-center gap-2 p-2 bg-[#F8F9FD] border border-[#E8EBF3] rounded-2xl mb-4 min-w-0">
+              <LinkIcon className="w-4 h-4 text-[#5865E9] shrink-0 ml-1" />
               <input 
                 type="text" 
                 readOnly 
                 value={linkData.url}
-                className="bg-transparent text-xs text-slate-700 font-medium flex-1 outline-none truncate min-w-0"
+                className="bg-transparent text-xs text-[#151B2D] font-medium flex-1 outline-none truncate min-w-0"
               />
               <button
                 onClick={handleCopy}
                 title="Copy Link"
-                className="p-2 rounded-xl bg-white hover:bg-slate-100 border border-slate-200 text-slate-700 transition shrink-0"
+                className="p-2 rounded-xl bg-white hover:bg-[#EEF1FF] border border-[#E8EBF3] text-[#788395] hover:text-[#5865E9] transition shrink-0"
               >
-                {copied ? <CheckCircle className="w-4 h-4 text-emerald-600" /> : <Copy className="w-4 h-4" />}
+                {copied ? <CheckCircle className="w-4 h-4 text-[#16A05A]" /> : <Copy className="w-4 h-4" />}
               </button>
               <button
                 onClick={() => setShowQr(!showQr)}
                 title="Show QR Code"
-                className="p-2 sm:px-3 sm:py-2 rounded-xl bg-blue-600 hover:bg-blue-700 text-white transition shrink-0 flex items-center gap-1 text-xs font-semibold shadow-sm"
+                className="p-2 sm:px-3 sm:py-2 rounded-xl bg-[#5865E9] hover:bg-[#4c57d8] text-white transition shrink-0 flex items-center gap-1 text-xs font-semibold shadow-titan-sm"
               >
                 <QrCode className="w-4 h-4" />
                 <span className="hidden sm:inline">QR</span>
@@ -660,36 +660,36 @@ export default function SendModal({ item, onClose, onStartTransfer }) {
 
             {/* QR Code expansion */}
             {showQr && (
-              <div className="p-3.5 sm:p-4 bg-slate-50 rounded-2xl border border-slate-100 inline-block mb-4 animate-fadeIn max-w-full overflow-hidden">
-                <img src={linkData.qrCode} alt="Download QR Code" className="w-36 sm:w-44 h-36 sm:h-44 max-w-full rounded-lg mx-auto object-contain" />
-                <p className="text-[11px] text-slate-400 mt-2">Scan with camera to download on any device</p>
+              <div className="p-4 bg-[#F8F9FD] rounded-2xl border border-[#E8EBF3] inline-block mb-4 animate-fadeIn max-w-full overflow-hidden">
+                <img src={linkData.qrCode} alt="Download QR Code" className="w-36 sm:w-44 h-36 sm:h-44 max-w-full rounded-xl bg-white p-2 mx-auto object-contain shadow-sm border border-[#E8EBF3]" />
+                <p className="text-[11px] text-[#788395] mt-2">Scan with camera to download on any device</p>
               </div>
             )}
 
             {/* Real-time Receiver Download Status Card */}
-            <div className="mb-4 p-3.5 bg-slate-50 rounded-2xl border border-slate-200 text-left">
+            <div className="mb-4 p-4 bg-[#F8F9FD] rounded-2xl border border-[#E8EBF3] text-left">
               <div className="flex items-center justify-between mb-2">
-                <span className="text-xs font-bold text-slate-700 flex items-center gap-1.5">
-                  <ArrowDownCircle className="w-4 h-4 text-blue-600" />
+                <span className="text-xs font-bold text-[#151B2D] flex items-center gap-1.5">
+                  <ArrowDownCircle className="w-4 h-4 text-[#5865E9]" />
                   <span>Receiver Download Status</span>
                 </span>
                 {liveDownload?.status === 'downloading' && (
-                  <span className="text-xs font-bold text-blue-600 animate-pulse">{liveDownload.percent}%</span>
+                  <span className="text-xs font-bold text-[#5865E9] animate-pulse">{liveDownload.percent}%</span>
                 )}
                 {liveDownload?.status === 'completed' && (
-                  <span className="text-xs font-bold text-emerald-600 flex items-center gap-1">
+                  <span className="text-xs font-bold text-[#16A05A] flex items-center gap-1">
                     <CheckCircle2 className="w-3.5 h-3.5" />
                     <span>Completed</span>
                   </span>
                 )}
                 {liveDownload?.status === 'accessed' && (
-                  <span className="text-[11px] font-bold text-indigo-600 flex items-center gap-1 bg-indigo-50 px-2.5 py-0.5 rounded-full border border-indigo-200">
+                  <span className="text-[11px] font-bold text-[#8755E8] flex items-center gap-1 bg-[#F4EFFF] px-2.5 py-0.5 rounded-full border border-[#e8dcfc]">
                     <Eye className="w-3.5 h-3.5" />
                     <span>Link Opened</span>
                   </span>
                 )}
                 {(!liveDownload || liveDownload.status === 'waiting') && (
-                  <span className="text-[11px] text-amber-600 font-semibold bg-amber-50 px-2 py-0.5 rounded-full border border-amber-200">
+                  <span className="text-[11px] text-amber-600 font-semibold bg-amber-50 px-2.5 py-0.5 rounded-full border border-amber-200">
                     Waiting for receiver...
                   </span>
                 )}
@@ -697,13 +697,13 @@ export default function SendModal({ item, onClose, onStartTransfer }) {
 
               {liveDownload?.status === 'downloading' && (
                 <div>
-                  <div className="w-full bg-slate-200 h-2 rounded-full overflow-hidden mb-1.5">
+                  <div className="w-full bg-[#EEF1FF] h-2 rounded-full overflow-hidden mb-1.5">
                     <div 
-                      className="bg-blue-600 h-full transition-all duration-300 rounded-full"
+                      className="bg-[#5865E9] h-full transition-all duration-300 rounded-full"
                       style={{ width: `${liveDownload.percent}%` }}
                     />
                   </div>
-                  <div className="flex justify-between text-[11px] text-slate-500 font-medium">
+                  <div className="flex justify-between text-[11px] text-[#788395] font-medium">
                     <span>Downloading to receiver device...</span>
                     <span>{formatBytes(liveDownload.bytesSent)} / {formatBytes(liveDownload.totalBytes)}</span>
                   </div>
@@ -711,32 +711,32 @@ export default function SendModal({ item, onClose, onStartTransfer }) {
               )}
 
               {liveDownload?.status === 'completed' && (
-                <p className="text-xs text-emerald-600 font-semibold mt-1">
+                <p className="text-xs text-[#16A05A] font-semibold mt-1">
                   Recipient has downloaded this file successfully!
                 </p>
               )}
 
               {liveDownload?.status === 'accessed' && (
-                <p className="text-xs text-indigo-600 font-semibold mt-1">
+                <p className="text-xs text-[#8755E8] font-semibold mt-1">
                   Recipient has opened and verified this link! Ready to transfer.
                 </p>
               )}
 
               {(!liveDownload || liveDownload.status === 'waiting') && (
-                <p className="text-[11px] text-slate-500">
+                <p className="text-[11px] text-[#788395]">
                   When recipient clicks your link or scans the QR, live progress will display here in real time.
                 </p>
               )}
             </div>
 
-            <div className="flex items-center justify-center gap-2 text-xs text-slate-400 mb-4">
-              <Clock className="w-3.5 h-3.5" />
+            <div className="flex items-center justify-center gap-2 text-xs text-[#788395] mb-4">
+              <Clock className="w-3.5 h-3.5 text-[#5865E9]" />
               <span>Expires in 3 hours automatically</span>
             </div>
 
             <button
               onClick={onClose}
-              className="w-full py-3 bg-slate-100 hover:bg-slate-200 text-slate-700 font-semibold text-sm rounded-xl transition"
+              className="w-full py-3.5 bg-[#EEF1FF] hover:bg-[#5865E9] text-[#5865E9] hover:text-white font-semibold text-sm rounded-2xl transition"
             >
               Done
             </button>

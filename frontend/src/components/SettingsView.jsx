@@ -363,28 +363,28 @@ export default function SettingsView({ isMobileMode, onNavigate }) {
     return (
       <div className="w-full max-w-7xl mx-auto px-6 py-4 space-y-6 animate-fadeIn pb-12">
         {/* Top Header Bar */}
-        <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4 pb-4 border-b border-slate-100">
+        <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4 pb-4 border-b border-[#E8EBF3]">
           <div>
             <div className="flex items-center gap-3">
-              <h2 className="text-2xl font-bold text-slate-900">System & Server Settings</h2>
-              <span className="px-3 py-1 bg-blue-50 text-blue-700 text-xs font-bold rounded-full border border-blue-100">
+              <h2 className="text-2xl font-bold text-[#151B2D]">System & Server Settings</h2>
+              <span className="px-3.5 py-1 bg-[#EEF1FF] text-[#5865E9] text-xs font-bold rounded-full">
                 Laptop Server
               </span>
             </div>
-            <p className="text-xs text-slate-500 mt-1">
+            <p className="text-xs text-[#788395] mt-1">
               Configure host streaming server, local save directories, and paired mobile devices
             </p>
           </div>
 
           <div className="flex items-center gap-3">
-            <div className="flex items-center gap-2 px-3.5 py-2 bg-white rounded-xl border border-slate-200 shadow-sm text-xs">
-              <span className={`w-2 h-2 rounded-full ${hostConnected ? 'bg-emerald-500 animate-pulse' : 'bg-amber-500'}`} />
-              <span className="font-semibold text-slate-700">{hostConnected ? 'Laptop Server Active' : 'Connecting...'}</span>
-              <span className="text-slate-400 font-mono font-medium">Port 51733</span>
+            <div className="flex items-center gap-2.5 px-4 py-2.5 bg-white rounded-2xl border border-[#E8EBF3] shadow-titan text-xs">
+              <span className={`w-2.5 h-2.5 rounded-full ${hostConnected ? 'bg-[#16A05A] animate-pulse' : 'bg-amber-500'}`} />
+              <span className="font-semibold text-[#151B2D]">{hostConnected ? 'Laptop Server Active' : 'Connecting...'}</span>
+              <span className="text-[#788395] font-mono font-medium">Port 51733</span>
             </div>
             <button
               onClick={reloadData}
-              className="p-2.5 bg-white hover:bg-slate-50 text-slate-600 rounded-xl border border-slate-200 shadow-sm transition"
+              className="p-2.5 bg-white hover:bg-[#F8F9FD] text-[#788395] hover:text-[#5865E9] rounded-2xl border border-[#E8EBF3] shadow-titan transition"
               title="Refresh Server Status"
             >
               <RefreshCw className="w-4 h-4" />
@@ -399,30 +399,30 @@ export default function SettingsView({ isMobileMode, onNavigate }) {
           <div className="lg:col-span-8 space-y-6">
 
             {/* Section 1: Host Server & Device Identity */}
-            <div className="bg-white rounded-[24px] p-6 shadow-card border border-slate-100">
-              <div className="flex items-center gap-3 mb-5">
-                <div className="w-10 h-10 rounded-xl bg-blue-50 text-blue-600 flex items-center justify-center border border-blue-100">
-                  <Laptop className="w-5 h-5" />
+            <div className="bg-white rounded-[28px] p-6 sm:p-7 shadow-titan border border-[#E8EBF3]">
+              <div className="flex items-center gap-3.5 mb-6">
+                <div className="w-12 h-12 rounded-full bg-[#EEF1FF] text-[#5865E9] flex items-center justify-center">
+                  <Laptop className="w-6 h-6" />
                 </div>
                 <div>
-                  <h3 className="text-base font-bold text-slate-800">Laptop Server & Identity</h3>
-                  <p className="text-xs text-slate-400">Network streaming address and device identity broadcast</p>
+                  <h3 className="text-base font-bold text-[#151B2D]">Laptop Server & Identity</h3>
+                  <p className="text-xs text-[#788395]">Network streaming address and device identity broadcast</p>
                 </div>
               </div>
 
               <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
                 <div>
-                  <label className="block text-xs font-semibold text-slate-600 mb-1.5">Laptop Device Name</label>
+                  <label className="block text-xs font-semibold text-[#151B2D] mb-2">Laptop Device Name</label>
                   <div className="flex items-center gap-2">
                     <input
                       type="text"
                       value={deviceName}
                       onChange={(e) => setDevName(e.target.value)}
-                      className="flex-1 px-4 py-2.5 bg-slate-50 border border-slate-200 rounded-xl text-sm font-semibold text-slate-800 outline-none focus:ring-2 focus:ring-blue-500/30 focus:border-blue-500"
+                      className="flex-1 px-4 py-3 bg-[#F8F9FD] border border-[#E8EBF3] rounded-2xl text-sm font-semibold text-[#151B2D] outline-none focus:ring-2 focus:ring-[#5865E9]/20 focus:border-[#5865E9]"
                     />
                     <button
                       onClick={handleSaveDeviceName}
-                      className="px-4 py-2.5 bg-blue-600 hover:bg-blue-700 text-white rounded-xl text-xs font-semibold transition shrink-0"
+                      className="px-5 py-3 bg-[#5865E9] hover:bg-[#4c57d8] text-white rounded-2xl text-xs font-semibold transition shrink-0 shadow-titan-sm"
                     >
                       {savedName ? <Check className="w-4 h-4" /> : 'Save'}
                     </button>
@@ -430,17 +430,17 @@ export default function SettingsView({ isMobileMode, onNavigate }) {
                 </div>
 
                 <div>
-                  <label className="block text-xs font-semibold text-slate-600 mb-1.5">Host Server Address</label>
+                  <label className="block text-xs font-semibold text-[#151B2D] mb-2">Host Server Address</label>
                   <div className="flex items-center gap-2">
                     <input
                       type="text"
                       value={hostUrl}
                       onChange={(e) => setHostUrl(e.target.value)}
-                      className="flex-1 px-4 py-2.5 bg-slate-50 border border-slate-200 rounded-xl text-xs font-mono text-slate-800 outline-none focus:ring-2 focus:ring-blue-500/30 focus:border-blue-500"
+                      className="flex-1 px-4 py-3 bg-[#F8F9FD] border border-[#E8EBF3] rounded-2xl text-xs font-mono text-[#151B2D] outline-none focus:ring-2 focus:ring-[#5865E9]/20 focus:border-[#5865E9]"
                     />
                     <button
                       onClick={handleSaveHostUrl}
-                      className="px-4 py-2.5 bg-blue-600 hover:bg-blue-700 text-white rounded-xl text-xs font-semibold transition shrink-0"
+                      className="px-5 py-3 bg-[#5865E9] hover:bg-[#4c57d8] text-white rounded-2xl text-xs font-semibold transition shrink-0 shadow-titan-sm"
                     >
                       Update
                     </button>
@@ -448,109 +448,101 @@ export default function SettingsView({ isMobileMode, onNavigate }) {
                 </div>
               </div>
 
-              {/* Network Chips */}
-              <div className="mt-5 pt-4 border-t border-slate-50 flex items-center justify-between flex-wrap gap-2 text-xs">
-                <div className="flex items-center gap-2 text-slate-500">
-                  <Wifi className="w-3.5 h-3.5 text-blue-600" />
-                  <span>Primary LAN IP: <strong className="font-mono text-slate-700">{pairingData?.payload?.ip || '10.89.213.60'}</strong></span>
+              {scanResult && (
+                <div className="mt-4 p-3 bg-[#E8FAF0] text-[#16A05A] border border-[#c9f2dc] rounded-2xl text-xs flex items-center gap-2">
+                  <Check className="w-4 h-4 shrink-0" />
+                  <span>{scanResult}</span>
                 </div>
-                <div className="flex items-center gap-2 text-slate-500">
-                  <Radio className="w-3.5 h-3.5 text-emerald-600" />
-                  <span>Transfer Engine: <strong className="text-emerald-700">Direct Socket Stream (Zero Cloud)</strong></span>
-                </div>
-              </div>
+              )}
             </div>
 
-            {/* Section 2: Received Files Storage Directory */}
-            <div className="bg-white rounded-[24px] p-6 shadow-card border border-slate-100">
-              <div className="flex items-center gap-3 mb-4">
-                <div className="w-10 h-10 rounded-xl bg-blue-50 text-blue-600 flex items-center justify-center border border-blue-100">
-                  <Folder className="w-5 h-5" />
+            {/* Section 2: Storage & File Reception Path */}
+            <div className="bg-white rounded-[28px] p-6 sm:p-7 shadow-titan border border-[#E8EBF3]">
+              <div className="flex items-center gap-3.5 mb-5">
+                <div className="w-12 h-12 rounded-full bg-[#E8FAF0] text-[#16A05A] flex items-center justify-center">
+                  <HardDrive className="w-6 h-6" />
                 </div>
                 <div>
-                  <h3 className="text-base font-bold text-slate-800">Received Files Save Location</h3>
-                  <p className="text-xs text-slate-400">Incoming files received from mobile devices will be saved directly to this path</p>
+                  <h3 className="text-base font-bold text-[#151B2D]">Save Directory</h3>
+                  <p className="text-xs text-[#788395]">Received files and folders are saved directly into this directory</p>
                 </div>
               </div>
 
-              <div className="flex flex-col sm:flex-row items-stretch sm:items-center gap-2 mb-3">
+              <div className="flex items-center gap-2 mb-3">
                 <input
                   type="text"
                   value={savePath}
                   onChange={(e) => setSavePath(e.target.value)}
-                  placeholder="C:\Users\Public\Downloads\TitanPlusShare"
-                  className="flex-1 px-4 py-2.5 bg-slate-50 border border-slate-200 rounded-xl text-xs font-mono text-slate-800 outline-none focus:ring-2 focus:ring-blue-500/30"
+                  className="flex-1 px-4 py-3 bg-[#F8F9FD] border border-[#E8EBF3] rounded-2xl text-xs font-mono text-[#151B2D] outline-none focus:ring-2 focus:ring-[#5865E9]/20"
                 />
                 <button
                   onClick={handleSavePath}
-                  className="px-5 py-2.5 bg-blue-600 hover:bg-blue-700 text-white rounded-xl text-xs font-semibold transition shrink-0 flex items-center justify-center gap-1.5 shadow-sm"
+                  className="px-5 py-3 bg-[#5865E9] hover:bg-[#4c57d8] text-white rounded-2xl text-xs font-semibold transition shrink-0 shadow-titan-sm"
                 >
-                  {savedPath ? <Check className="w-4 h-4" /> : 'Save Location'}
+                  {savedPath ? <Check className="w-4 h-4" /> : 'Set Path'}
                 </button>
               </div>
 
-              <div className="flex items-center gap-2 flex-wrap">
-                <span className="text-xs font-semibold text-slate-400 mr-1">Quick Presets:</span>
-                <button
+              <div className="flex items-center gap-2">
+                <span className="text-[11px] text-[#788395]">Presets:</span>
+                <button 
                   onClick={() => setSavePath('C:\\Users\\Public\\Downloads\\TitanPlusShare')}
-                  className="px-3 py-1.5 bg-slate-100 hover:bg-slate-200 text-slate-700 rounded-xl text-xs font-medium transition"
+                  className="px-3 py-1.5 bg-[#F8F9FD] hover:bg-[#EEF1FF] text-[#788395] hover:text-[#5865E9] rounded-xl text-xs font-medium transition border border-[#E8EBF3]"
                 >
                   Public Downloads
                 </button>
-                <button
-                  onClick={() => setSavePath('Desktop\\TitanPlusShare')}
-                  className="px-3 py-1.5 bg-slate-100 hover:bg-slate-200 text-slate-700 rounded-xl text-xs font-medium transition"
+                <button 
+                  onClick={() => setSavePath('C:\\TitanPlusShare')}
+                  className="px-3 py-1.5 bg-[#F8F9FD] hover:bg-[#EEF1FF] text-[#788395] hover:text-[#5865E9] rounded-xl text-xs font-medium transition border border-[#E8EBF3]"
                 >
-                  Desktop
+                  C:\ Root Folder
                 </button>
               </div>
             </div>
 
-            {/* Section 3: Paired Devices List (Spacious Desktop View) */}
-            <div className="bg-white rounded-[24px] p-6 shadow-card border border-slate-100">
-              <div className="flex items-center justify-between mb-4">
-                <div className="flex items-center gap-3">
-                  <div className="w-10 h-10 rounded-xl bg-blue-50 text-blue-600 flex items-center justify-center border border-blue-100">
-                    <Smartphone className="w-5 h-5" />
+            {/* Section 3: Paired Mobile Devices List */}
+            <div className="bg-white rounded-[28px] p-6 sm:p-7 shadow-titan border border-[#E8EBF3]">
+              <div className="flex items-center justify-between mb-5">
+                <div className="flex items-center gap-3.5">
+                  <div className="w-12 h-12 rounded-full bg-[#F4EFFF] text-[#8755E8] flex items-center justify-center">
+                    <Smartphone className="w-6 h-6" />
                   </div>
                   <div>
-                    <h3 className="text-base font-bold text-slate-800">Paired Mobile Devices</h3>
-                    <p className="text-xs text-slate-400">Smartphones authorized for 1-click instant direct file transfers</p>
+                    <h3 className="text-base font-bold text-[#151B2D]">Paired Devices</h3>
+                    <p className="text-xs text-[#788395]">Authorized phones and laptops for instant direct sharing</p>
                   </div>
                 </div>
-                <span className="px-3 py-1 bg-slate-100 text-slate-700 rounded-full text-xs font-bold">
+                <span className="text-xs font-bold px-3 py-1 bg-[#EEF1FF] text-[#5865E9] rounded-full">
                   {pairedDevices.length} Connected
                 </span>
               </div>
 
               {pairedDevices.length === 0 ? (
-                <div className="p-8 bg-slate-50/70 rounded-2xl border border-dashed border-slate-200 text-center">
-                  <Smartphone className="w-10 h-10 text-slate-300 mx-auto mb-2" />
-                  <h4 className="font-bold text-slate-700 text-sm mb-1">No Mobile Devices Paired Yet</h4>
-                  <p className="text-xs text-slate-400 max-w-sm mx-auto">
-                    Scan the QR code on the right side using the Titan Plus Share mobile app to pair your phone.
-                  </p>
+                <div className="p-8 text-center bg-[#F8F9FD] rounded-2xl border border-dashed border-[#E8EBF3]">
+                  <Smartphone className="w-8 h-8 text-[#788395] mx-auto mb-2 opacity-50" />
+                  <p className="text-sm font-semibold text-[#151B2D]">No devices paired yet</p>
+                  <p className="text-xs text-[#788395] mt-1">Scan the QR code on the right with Titan Plus Share on your phone</p>
                 </div>
               ) : (
-                <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
+                <div className="space-y-3">
                   {pairedDevices.map((d) => (
-                    <div key={d.deviceId} className="p-4 bg-slate-50/80 hover:bg-blue-50/30 rounded-2xl border border-slate-100 transition flex items-center justify-between">
-                      <div className="flex items-center gap-3">
-                        <div className="w-10 h-10 rounded-xl bg-white text-blue-600 flex items-center justify-center border border-slate-200 shadow-sm">
-                          <Smartphone className="w-5 h-5" />
+                    <div key={d.deviceId} className="flex items-center justify-between p-4 bg-[#F8F9FD] rounded-2xl border border-[#E8EBF3] hover:border-[#5865E9]/30 transition">
+                      <div className="flex items-center gap-3.5">
+                        <div className="w-10 h-10 rounded-full bg-white text-[#5865E9] flex items-center justify-center shadow-titan-sm">
+                          {d.deviceType === 'laptop' ? <Laptop className="w-5 h-5" /> : <Smartphone className="w-5 h-5" />}
                         </div>
                         <div>
-                          <div className="font-bold text-slate-800 text-sm">{d.deviceName}</div>
-                          <div className="flex items-center gap-1.5 mt-0.5">
-                            <span className="w-1.5 h-1.5 rounded-full bg-emerald-500 animate-pulse" />
-                            <span className="text-xs text-emerald-600 font-medium font-mono">{d.ip || 'LAN Connected'}</span>
+                          <div className="font-bold text-[#151B2D] text-sm">{d.deviceName}</div>
+                          <div className="text-xs text-[#16A05A] font-medium flex items-center gap-1.5 mt-0.5">
+                            <span className="w-2 h-2 rounded-full bg-[#16A05A] animate-pulse" />
+                            <span>Paired • {d.ip || 'LAN Active'}</span>
                           </div>
                         </div>
                       </div>
                       <button
                         onClick={() => handleRemoveDevice(d.deviceId)}
-                        className="p-2.5 text-slate-400 hover:text-rose-500 hover:bg-white rounded-xl border border-transparent hover:border-slate-200 transition"
-                        title="Unpair Device"
+                        className="p-2.5 text-[#788395] hover:text-[#F16B72] hover:bg-[#FFF0F2] rounded-xl transition"
+                        title="Remove device"
                       >
                         <Trash2 className="w-4 h-4" />
                       </button>
@@ -562,79 +554,80 @@ export default function SettingsView({ isMobileMode, onNavigate }) {
 
           </div>
 
-          {/* RIGHT COLUMN: 4 COLS (HERO PAIRING QR CODE & SYSTEM INFO) */}
+          {/* RIGHT COLUMN: 4 COLS */}
           <div className="lg:col-span-4 space-y-6">
 
-            {/* Hero Pairing QR Card */}
-            <div className="bg-white rounded-[24px] p-6 shadow-card border border-slate-100 text-center">
-              <div className="inline-flex items-center gap-1.5 px-3 py-1 bg-blue-50 text-blue-700 rounded-full text-xs font-bold mb-4">
-                <QrCode className="w-3.5 h-3.5" />
-                <span>Mobile Pairing QR</span>
+            {/* Laptop Pairing QR Card */}
+            <div className="bg-white rounded-[28px] p-6 sm:p-7 shadow-titan border border-[#E8EBF3] text-center">
+              <div className="flex items-center justify-between mb-4">
+                <span className="text-xs font-bold uppercase tracking-wider text-[#788395]">Fast Pairing</span>
+                <span className="inline-flex items-center gap-1.5 px-3 py-1 bg-[#E8FAF0] text-[#16A05A] text-xs font-bold rounded-full">
+                  <ShieldCheck className="w-3.5 h-3.5" />
+                  <span>Secure LAN</span>
+                </span>
               </div>
 
-              <h3 className="font-bold text-slate-800 text-base mb-1">Pair with Phone</h3>
-              <p className="text-xs text-slate-400 mb-5">
-                Open Titan Plus Share on your phone and scan this code to link
+              <div className="p-4 bg-[#F8F9FD] rounded-2xl border border-[#E8EBF3] inline-block mb-4">
+                {pairingData?.qrCode ? (
+                  <img
+                    src={pairingData.qrCode}
+                    alt="Pairing QR Code"
+                    className="w-52 h-52 mx-auto rounded-xl shadow-sm bg-white p-2 object-contain"
+                  />
+                ) : (
+                  <div className="w-52 h-52 flex flex-col items-center justify-center text-xs text-[#788395]">
+                    <RefreshCw className="w-6 h-6 text-[#5865E9] animate-spin mb-2" />
+                    <span>Loading QR...</span>
+                  </div>
+                )}
+              </div>
+
+              <h4 className="font-bold text-[#151B2D] text-sm mb-1">Scan with Titan Plus Phone App</h4>
+              <p className="text-xs text-[#788395] leading-relaxed mb-4">
+                Open Settings &gt; Scan QR on your mobile app to instantly link this laptop.
               </p>
 
-              {pairingData?.qrCode ? (
-                <div className="p-4 bg-slate-50 rounded-2xl border border-slate-100 inline-block mb-4 shadow-sm">
-                  <img src={pairingData.qrCode} alt="Laptop Pairing QR" className="w-48 h-48 mx-auto rounded-xl shadow-inner border border-slate-200 object-contain" />
-                </div>
-              ) : (
-                <div className="w-48 h-48 mx-auto bg-slate-50 rounded-2xl border border-slate-100 flex items-center justify-center mb-4">
-                  <RefreshCw className="w-8 h-8 animate-spin text-blue-600" />
-                </div>
-              )}
-
-              <div className="p-3 bg-slate-50 rounded-xl text-left border border-slate-100 mb-4">
-                <div className="text-[11px] font-semibold text-slate-400 mb-0.5">Host Server</div>
-                <div className="text-xs font-mono font-bold text-slate-800 truncate">
-                  {pairingData?.payload?.name} ({pairingData?.payload?.ip}:{pairingData?.payload?.port || 51733})
-                </div>
-              </div>
-
-              <div className="text-left space-y-2 text-xs text-slate-500">
+              <div className="p-3.5 bg-[#F8F9FD] rounded-2xl border border-[#E8EBF3] text-left text-xs text-[#788395] space-y-2">
                 <div className="flex items-start gap-2">
-                  <span className="w-5 h-5 rounded-full bg-blue-100 text-blue-700 font-bold flex items-center justify-center text-[10px] shrink-0 mt-0.5">1</span>
+                  <span className="w-5 h-5 rounded-full bg-[#EEF1FF] text-[#5865E9] font-bold flex items-center justify-center text-[10px] shrink-0 mt-0.5">1</span>
                   <span>Connect both Laptop & Phone to same Wi-Fi or Mobile Hotspot</span>
                 </div>
                 <div className="flex items-start gap-2">
-                  <span className="w-5 h-5 rounded-full bg-blue-100 text-blue-700 font-bold flex items-center justify-center text-[10px] shrink-0 mt-0.5">2</span>
+                  <span className="w-5 h-5 rounded-full bg-[#EEF1FF] text-[#5865E9] font-bold flex items-center justify-center text-[10px] shrink-0 mt-0.5">2</span>
                   <span>Open Titan Plus Share on your Android phone</span>
                 </div>
                 <div className="flex items-start gap-2">
-                  <span className="w-5 h-5 rounded-full bg-blue-100 text-blue-700 font-bold flex items-center justify-center text-[10px] shrink-0 mt-0.5">3</span>
+                  <span className="w-5 h-5 rounded-full bg-[#EEF1FF] text-[#5865E9] font-bold flex items-center justify-center text-[10px] shrink-0 mt-0.5">3</span>
                   <span>Tap "Pair Device" and point camera at this QR code</span>
                 </div>
               </div>
             </div>
 
-            {/* About & Eco Card */}
-            <div className="bg-white rounded-[24px] p-6 shadow-card border border-slate-100">
-              <div className="flex items-center gap-3 mb-4">
-                <img src="/logo.png" alt="Titan Plus Share" className="w-12 h-12 rounded-2xl object-cover shadow-sm" />
+            {/* About Card */}
+            <div className="bg-white rounded-[28px] p-6 sm:p-7 shadow-titan border border-[#E8EBF3]">
+              <div className="flex items-center gap-3.5 mb-5">
+                <img src="/logo.png" alt="Titan Plus Share" className="w-12 h-12 rounded-2xl object-cover shadow-titan-sm" />
                 <div>
-                  <h4 className="font-bold text-slate-900 text-base leading-tight">Titan Plus Share</h4>
-                  <p className="text-xs text-slate-400">Fast • Simple • Anywhere</p>
-                  <span className="inline-block mt-1 text-[10px] font-bold px-2 py-0.5 bg-emerald-50 text-emerald-700 rounded-md border border-emerald-200">
+                  <h4 className="font-extrabold text-[#151B2D] text-base leading-tight">Titan Plus Share</h4>
+                  <p className="text-xs text-[#788395]">Fast • Simple • Anywhere</p>
+                  <span className="inline-block mt-1 text-[10px] font-bold px-2.5 py-0.5 bg-[#E8FAF0] text-[#16A05A] rounded-full">
                     Version 1.0.0
                   </span>
                 </div>
               </div>
 
-              <div className="pt-3 border-t border-slate-100 space-y-2 text-xs text-slate-600">
+              <div className="pt-4 border-t border-[#E8EBF3] space-y-2.5 text-xs text-[#788395]">
                 <div className="flex items-center justify-between">
-                  <span className="text-slate-400">Architecture</span>
-                  <span className="font-semibold">Local Node Engine + React</span>
+                  <span>Architecture</span>
+                  <span className="font-semibold text-[#151B2D]">Local Node Engine + React</span>
                 </div>
                 <div className="flex items-center justify-between">
-                  <span className="text-slate-400">Security</span>
-                  <span className="font-semibold text-emerald-600">Zero Cloud • Direct LAN</span>
+                  <span>Security</span>
+                  <span className="font-semibold text-[#16A05A]">Zero Cloud • Direct LAN</span>
                 </div>
                 <div className="flex items-center justify-between">
-                  <span className="text-slate-400">Status</span>
-                  <span className="font-semibold text-blue-600">All Services Operational</span>
+                  <span>Status</span>
+                  <span className="font-semibold text-[#5865E9]">All Services Operational</span>
                 </div>
               </div>
             </div>
@@ -650,7 +643,7 @@ export default function SettingsView({ isMobileMode, onNavigate }) {
   // MOBILE APK LAYOUT (isMobileMode)
   // ==========================================
   return (
-    <div className="w-full max-w-xl mx-auto px-2 sm:px-4 py-3 sm:py-6 space-y-4 animate-fadeIn overflow-x-hidden pb-24 sm:pb-8">
+    <div className="w-full max-w-xl mx-auto px-2 sm:px-4 py-3 sm:py-6 space-y-4 animate-fadeIn overflow-x-hidden pb-28">
       
       {/* Hidden container for image decoding */}
       <div id="qr-image-decoder" className="hidden"></div>
@@ -664,23 +657,23 @@ export default function SettingsView({ isMobileMode, onNavigate }) {
 
       {/* Header */}
       <div>
-        <h2 className="text-lg sm:text-xl font-bold text-slate-800">Settings</h2>
-        <p className="text-[11px] sm:text-xs text-slate-500">Configure pairing, save location, and preferences</p>
+        <h2 className="text-lg sm:text-xl font-bold text-[#151B2D]">Settings</h2>
+        <p className="text-[11px] sm:text-xs text-[#788395]">Configure pairing, save location, and preferences</p>
       </div>
 
       {/* Device Profile Card */}
-      <div className="bg-white rounded-[22px] p-4 sm:p-5 shadow-card border border-slate-100">
-        <h3 className="text-sm font-semibold text-slate-800 mb-3">Device Identity</h3>
+      <div className="bg-white rounded-[26px] p-5 shadow-titan border border-[#E8EBF3]">
+        <h3 className="text-sm font-bold text-[#151B2D] mb-3">Device Identity</h3>
         <div className="flex items-center gap-2">
           <input
             type="text"
             value={deviceName}
             onChange={(e) => setDevName(e.target.value)}
-            className="flex-1 min-w-0 px-3.5 py-2.5 bg-slate-50 border border-slate-200 rounded-xl text-xs sm:text-sm font-semibold text-slate-800 outline-none focus:ring-2 focus:ring-blue-500/30 focus:border-blue-500"
+            className="flex-1 min-w-0 px-4 py-3 bg-[#F8F9FD] border border-[#E8EBF3] rounded-2xl text-xs sm:text-sm font-semibold text-[#151B2D] outline-none focus:ring-2 focus:ring-[#5865E9]/20 focus:border-[#5865E9]"
           />
           <button
             onClick={handleSaveDeviceName}
-            className="px-4 py-2.5 bg-blue-600 hover:bg-blue-700 text-white rounded-xl text-xs font-semibold transition shrink-0"
+            className="px-5 py-3 bg-[#5865E9] hover:bg-[#4c57d8] text-white rounded-2xl text-xs font-semibold transition shrink-0 shadow-titan-sm"
           >
             {savedName ? <Check className="w-4 h-4" /> : 'Save'}
           </button>
@@ -688,21 +681,21 @@ export default function SettingsView({ isMobileMode, onNavigate }) {
       </div>
 
       {/* Host Laptop Server Connection Card */}
-      <div className="bg-white rounded-[22px] p-4 sm:p-5 shadow-card border border-slate-100">
-        <div className="flex items-center justify-between mb-3 gap-2">
+      <div className="bg-white rounded-[26px] p-5 shadow-titan border border-[#E8EBF3]">
+        <div className="flex items-center justify-between mb-3.5 gap-2">
           <div className="flex items-center gap-2.5 min-w-0">
-            <div className="w-8 h-8 rounded-lg bg-blue-50 text-blue-600 flex items-center justify-center border border-blue-100 shrink-0">
+            <div className="w-9 h-9 rounded-full bg-[#EEF1FF] text-[#5865E9] flex items-center justify-center shrink-0">
               <Server className="w-4 h-4" />
             </div>
             <div className="min-w-0">
-              <h3 className="text-xs sm:text-sm font-semibold text-slate-800 truncate">Host Laptop Server</h3>
-              <p className="text-[10px] sm:text-[11px] text-slate-400 truncate">Direct LAN / Hotspot IP of host laptop</p>
+              <h3 className="text-xs sm:text-sm font-bold text-[#151B2D] truncate">Host Laptop Server</h3>
+              <p className="text-[10px] sm:text-[11px] text-[#788395] truncate">Direct LAN / Hotspot IP of host laptop</p>
             </div>
           </div>
-          <span className={`inline-flex items-center gap-1.5 px-2.5 py-1 rounded-full text-[10px] sm:text-[11px] font-bold shrink-0 ${
-            hostConnected ? 'bg-emerald-50 text-emerald-600 border border-emerald-200' : 'bg-amber-50 text-amber-600 border border-amber-200'
+          <span className={`inline-flex items-center gap-1.5 px-3 py-1 rounded-full text-[10px] sm:text-[11px] font-bold shrink-0 ${
+            hostConnected ? 'bg-[#E8FAF0] text-[#16A05A] border border-[#c9f2dc]' : 'bg-amber-50 text-amber-600 border border-amber-200'
           }`}>
-            <span className={`w-1.5 h-1.5 rounded-full ${hostConnected ? 'bg-emerald-500' : 'bg-amber-500 animate-pulse'}`} />
+            <span className={`w-1.5 h-1.5 rounded-full ${hostConnected ? 'bg-[#16A05A]' : 'bg-amber-500 animate-pulse'}`} />
             {hostConnected ? 'Connected' : 'Offline'}
           </span>
         </div>
@@ -713,22 +706,22 @@ export default function SettingsView({ isMobileMode, onNavigate }) {
             value={hostUrl}
             onChange={(e) => setHostUrl(e.target.value)}
             placeholder="http://10.89.213.60:51733"
-            className="flex-1 min-w-0 px-3.5 py-2.5 bg-slate-50 border border-slate-200 rounded-xl text-xs font-mono text-slate-800 outline-none focus:ring-2 focus:ring-blue-500/30 focus:border-blue-500"
+            className="flex-1 min-w-0 px-4 py-3 bg-[#F8F9FD] border border-[#E8EBF3] rounded-2xl text-xs font-mono text-[#151B2D] outline-none focus:ring-2 focus:ring-[#5865E9]/20 focus:border-[#5865E9]"
           />
           <button
             onClick={handleSaveHostUrl}
-            className="px-5 py-2.5 bg-blue-600 hover:bg-blue-700 text-white rounded-xl text-xs font-semibold transition shrink-0 flex items-center justify-center"
+            className="px-5 py-3 bg-[#5865E9] hover:bg-[#4c57d8] text-white rounded-2xl text-xs font-semibold transition shrink-0 flex items-center justify-center shadow-titan-sm"
           >
             Connect
           </button>
         </div>
 
-        <div className="flex items-center justify-between pt-2 border-t border-slate-50 text-[11px]">
-          <span className="text-slate-400">Default Port: 51733</span>
+        <div className="flex items-center justify-between pt-2 border-t border-[#E8EBF3] text-[11px]">
+          <span className="text-[#788395]">Default Port: 51733</span>
           <button
             onClick={handleAutoDiscover}
             disabled={discovering}
-            className="text-blue-600 hover:text-blue-700 font-semibold flex items-center gap-1 transition"
+            className="text-[#5865E9] hover:underline font-semibold flex items-center gap-1 transition"
           >
             <RefreshCw className={`w-3 h-3 ${discovering ? 'animate-spin' : ''}`} />
             <span>{discovering ? 'Detecting...' : 'Auto-Detect Laptop'}</span>
@@ -737,14 +730,14 @@ export default function SettingsView({ isMobileMode, onNavigate }) {
       </div>
 
       {/* Save Location Configuration (For Mobile) */}
-      <div className="bg-white rounded-[22px] p-4 sm:p-5 shadow-card border border-slate-100">
+      <div className="bg-white rounded-[26px] p-5 shadow-titan border border-[#E8EBF3]">
         <div className="flex items-center gap-2.5 mb-2 min-w-0">
-          <div className="w-8 h-8 rounded-lg bg-blue-50 text-blue-600 flex items-center justify-center border border-blue-100 shrink-0">
+          <div className="w-9 h-9 rounded-full bg-[#E8FAF0] text-[#16A05A] flex items-center justify-center shrink-0">
             <Folder className="w-4 h-4" />
           </div>
           <div className="min-w-0">
-            <h3 className="text-xs sm:text-sm font-semibold text-slate-800 truncate">Received Files Save Location</h3>
-            <p className="text-[10px] sm:text-xs text-slate-500 truncate">Saved here automatically</p>
+            <h3 className="text-xs sm:text-sm font-bold text-[#151B2D] truncate">Received Files Save Location</h3>
+            <p className="text-[10px] sm:text-xs text-[#788395] truncate">Saved here automatically</p>
           </div>
         </div>
 
@@ -754,21 +747,21 @@ export default function SettingsView({ isMobileMode, onNavigate }) {
             value={savePath}
             onChange={(e) => setSavePath(e.target.value)}
             placeholder="/storage/emulated/0/Download/TitanPlusShare"
-            className="flex-1 min-w-0 px-3.5 py-2.5 bg-slate-50 border border-slate-200 rounded-xl text-xs font-mono text-slate-800 outline-none focus:ring-2 focus:ring-blue-500/30"
+            className="flex-1 min-w-0 px-4 py-3 bg-[#F8F9FD] border border-[#E8EBF3] rounded-2xl text-xs font-mono text-[#151B2D] outline-none focus:ring-2 focus:ring-[#5865E9]/20"
           />
           <button
             onClick={handleSavePath}
-            className="px-4 py-2.5 bg-blue-600 hover:bg-blue-700 text-white rounded-xl text-xs font-semibold transition shrink-0 flex items-center justify-center"
+            className="px-5 py-3 bg-[#5865E9] hover:bg-[#4c57d8] text-white rounded-2xl text-xs font-semibold transition shrink-0 flex items-center justify-center shadow-titan-sm"
           >
             {savedPath ? <Check className="w-4 h-4" /> : 'Save Path'}
           </button>
         </div>
 
         <div className="flex items-center gap-2 flex-wrap">
-          <span className="text-[11px] text-slate-400">Presets:</span>
+          <span className="text-[11px] text-[#788395]">Presets:</span>
           <button 
             onClick={() => setSavePath('/storage/emulated/0/Download/TitanPlusShare')}
-            className="px-2.5 py-1 bg-slate-100 hover:bg-slate-200 text-slate-600 rounded-lg text-[10px] font-medium transition"
+            className="px-3 py-1.5 bg-[#F8F9FD] hover:bg-[#EEF1FF] text-[#788395] hover:text-[#5865E9] rounded-xl text-[10px] font-medium transition border border-[#E8EBF3]"
           >
             Downloads Folder
           </button>
@@ -776,22 +769,22 @@ export default function SettingsView({ isMobileMode, onNavigate }) {
       </div>
 
       {/* One-Time QR Pairing Section (Mobile to Mobile & Mobile to Laptop) */}
-      <div className="bg-white rounded-[22px] p-4 sm:p-5 shadow-card border border-slate-100">
+      <div className="bg-white rounded-[26px] p-5 shadow-titan border border-[#E8EBF3]">
         <div className="flex items-center justify-between mb-3.5">
           <div>
-            <h3 className="text-xs sm:text-sm font-semibold text-slate-800">Device Pairing (Mobile & Laptop)</h3>
-            <p className="text-[10px] sm:text-xs text-slate-500">Pair phone to phone or phone to laptop via QR</p>
+            <h3 className="text-xs sm:text-sm font-bold text-[#151B2D]">Device Pairing (Mobile & Laptop)</h3>
+            <p className="text-[10px] sm:text-xs text-[#788395]">Pair phone to phone or phone to laptop via QR</p>
           </div>
         </div>
 
         {/* Tab Toggle: Show QR vs Scan QR */}
-        <div className="flex p-1 bg-slate-100 rounded-xl mb-4 text-xs font-semibold">
+        <div className="flex p-1.5 bg-[#F8F9FD] rounded-2xl mb-4 text-xs font-semibold border border-[#E8EBF3]">
           <button
             onClick={() => { setPairingTab('qr'); setScanning(false); }}
-            className={`flex-1 py-2 rounded-lg flex items-center justify-center gap-1.5 transition ${
+            className={`flex-1 py-2 rounded-xl flex items-center justify-center gap-1.5 transition ${
               pairingTab === 'qr'
-                ? 'bg-white text-blue-600 shadow-sm'
-                : 'text-slate-500 hover:text-slate-700'
+                ? 'bg-white text-[#5865E9] shadow-titan-sm'
+                : 'text-[#788395] hover:text-[#151B2D]'
             }`}
           >
             <QrCode className="w-3.5 h-3.5" />
@@ -799,10 +792,10 @@ export default function SettingsView({ isMobileMode, onNavigate }) {
           </button>
           <button
             onClick={() => setPairingTab('scan')}
-            className={`flex-1 py-2 rounded-lg flex items-center justify-center gap-1.5 transition ${
+            className={`flex-1 py-2 rounded-xl flex items-center justify-center gap-1.5 transition ${
               pairingTab === 'scan'
-                ? 'bg-white text-blue-600 shadow-sm'
-                : 'text-slate-500 hover:text-slate-700'
+                ? 'bg-white text-[#5865E9] shadow-titan-sm'
+                : 'text-[#788395] hover:text-[#151B2D]'
             }`}
           >
             <Camera className="w-3.5 h-3.5" />
@@ -814,26 +807,26 @@ export default function SettingsView({ isMobileMode, onNavigate }) {
         {pairingTab === 'qr' && (
           <div className="text-center py-2 animate-fadeIn">
             {mobileQr ? (
-              <div className="p-4 bg-slate-50/80 rounded-2xl border border-slate-100 inline-block max-w-full">
+              <div className="p-4 bg-[#F8F9FD] rounded-2xl border border-[#E8EBF3] inline-block max-w-full">
                 <img 
                   src={mobileQr} 
                   alt="Mobile Device Pairing QR" 
-                  className="w-44 sm:w-48 h-44 sm:h-48 mx-auto rounded-xl shadow-sm border border-slate-200 bg-white p-2 object-contain" 
+                  className="w-44 sm:w-48 h-44 sm:h-48 mx-auto rounded-xl shadow-sm bg-white p-2 object-contain" 
                 />
                 <div className="mt-3">
-                  <div className="inline-flex items-center gap-1.5 px-3 py-1 bg-blue-50 text-blue-700 text-xs font-bold rounded-full border border-blue-100 mb-1">
+                  <div className="inline-flex items-center gap-1.5 px-3 py-1 bg-[#EEF1FF] text-[#5865E9] text-xs font-bold rounded-full mb-1">
                     <Smartphone className="w-3 h-3" />
                     <span>{deviceName || 'Mobile Device'}</span>
                   </div>
-                  <p className="text-[11px] text-slate-500 mt-1">
+                  <p className="text-[11px] text-[#788395] mt-1">
                     Show this QR on another Phone or Laptop to pair instantly
                   </p>
                 </div>
               </div>
             ) : (
               <div className="py-8 flex flex-col items-center justify-center">
-                <RefreshCw className="w-6 h-6 text-blue-600 animate-spin mb-2" />
-                <span className="text-xs text-slate-400">Generating pairing QR...</span>
+                <RefreshCw className="w-6 h-6 text-[#5865E9] animate-spin mb-2" />
+                <span className="text-xs text-[#788395]">Generating pairing QR...</span>
               </div>
             )}
           </div>
@@ -842,58 +835,58 @@ export default function SettingsView({ isMobileMode, onNavigate }) {
         {/* TAB 2: Scan QR Code */}
         {pairingTab === 'scan' && (
           <div className="space-y-3 animate-fadeIn">
-            <div className="p-3.5 sm:p-4 bg-blue-50/60 rounded-2xl border border-blue-100/70 flex flex-col sm:flex-row items-start sm:items-center justify-between gap-3">
+            <div className="p-4 bg-[#F8F9FD] rounded-2xl border border-[#E8EBF3] flex flex-col sm:flex-row items-start sm:items-center justify-between gap-3">
               <div className="min-w-0">
-                <h4 className="font-semibold text-slate-800 text-xs sm:text-sm">Scan QR Code</h4>
-                <p className="text-[11px] text-slate-500">Scan QR from another phone or laptop</p>
+                <h4 className="font-bold text-[#151B2D] text-xs sm:text-sm">Scan QR Code</h4>
+                <p className="text-[11px] text-[#788395]">Scan QR from another phone or laptop</p>
               </div>
               <div className="grid grid-cols-2 gap-2 w-full sm:w-auto">
                 <button
                   onClick={() => setScanning(!scanning)}
-                  className="px-3.5 py-2.5 bg-blue-600 hover:bg-blue-700 text-white rounded-xl text-xs font-semibold flex items-center justify-center gap-1.5 transition shadow-sm"
+                  className="px-4 py-2.5 bg-[#5865E9] hover:bg-[#4c57d8] text-white rounded-xl text-xs font-semibold flex items-center justify-center gap-1.5 transition shadow-titan-sm"
                 >
                   <Camera className="w-4 h-4" />
                   <span>{scanning ? 'Close' : 'Camera'}</span>
                 </button>
                 <button
                   onClick={() => fileInputRef.current?.click()}
-                  className="px-3 py-2.5 bg-white hover:bg-slate-100 text-slate-700 border border-slate-200 rounded-xl text-xs font-semibold flex items-center justify-center gap-1.5 transition shadow-sm"
+                  className="px-4 py-2.5 bg-white hover:bg-[#F8F9FD] text-[#151B2D] border border-[#E8EBF3] rounded-xl text-xs font-semibold flex items-center justify-center gap-1.5 transition shadow-titan-sm"
                 >
-                  <Image className="w-4 h-4 text-blue-600" />
+                  <Image className="w-4 h-4 text-[#5865E9]" />
                   <span>Photo</span>
                 </button>
               </div>
             </div>
 
             {scanning && (
-              <div className="p-3 sm:p-4 bg-white rounded-2xl border border-blue-200 overflow-hidden text-center shadow-sm">
+              <div className="p-4 bg-white rounded-2xl border border-[#5865E9]/40 overflow-hidden text-center shadow-titan">
                 <div className="flex items-center justify-between mb-2">
-                  <span className="text-xs font-bold text-slate-700 flex items-center gap-1.5">
-                    <Camera className="w-3.5 h-3.5 text-blue-600 animate-pulse" />
+                  <span className="text-xs font-bold text-[#151B2D] flex items-center gap-1.5">
+                    <Camera className="w-3.5 h-3.5 text-[#5865E9] animate-pulse" />
                     <span>Scanning Pairing QR...</span>
                   </span>
-                  <button onClick={() => setScanning(false)} className="text-slate-400 hover:text-slate-600 p-1">
+                  <button onClick={() => setScanning(false)} className="text-[#788395] hover:text-[#151B2D] p-1">
                     <X className="w-4 h-4" />
                   </button>
                 </div>
                 <div className="relative overflow-hidden rounded-2xl bg-black aspect-square max-w-[260px] mx-auto shadow-inner">
                   <div id={settingsScannerDomId.current} className="w-full h-full min-h-[240px]"></div>
-                  <div className="absolute inset-0 border-2 border-blue-500/40 rounded-2xl pointer-events-none flex items-center justify-center">
+                  <div className="absolute inset-0 border-2 border-[#5865E9]/40 rounded-2xl pointer-events-none flex items-center justify-center">
                     <div className="w-48 h-48 border border-white/40 rounded-xl relative">
-                      <div className="absolute -top-0.5 -left-0.5 w-4 h-4 border-t-2 border-l-2 border-blue-500 rounded-tl"></div>
-                      <div className="absolute -top-0.5 -right-0.5 w-4 h-4 border-t-2 border-r-2 border-blue-500 rounded-tr"></div>
-                      <div className="absolute -bottom-0.5 -left-0.5 w-4 h-4 border-b-2 border-l-2 border-blue-500 rounded-bl"></div>
-                      <div className="absolute -bottom-0.5 -right-0.5 w-4 h-4 border-b-2 border-r-2 border-blue-500 rounded-br"></div>
+                      <div className="absolute -top-0.5 -left-0.5 w-4 h-4 border-t-2 border-l-2 border-[#5865E9] rounded-tl"></div>
+                      <div className="absolute -top-0.5 -right-0.5 w-4 h-4 border-t-2 border-r-2 border-[#5865E9] rounded-tr"></div>
+                      <div className="absolute -bottom-0.5 -left-0.5 w-4 h-4 border-b-2 border-l-2 border-[#5865E9] rounded-bl"></div>
+                      <div className="absolute -bottom-0.5 -right-0.5 w-4 h-4 border-b-2 border-r-2 border-[#5865E9] rounded-br"></div>
                     </div>
                   </div>
                 </div>
-                <p className="text-[11px] text-slate-400 text-center mt-2">Point camera directly at the other phone or laptop QR</p>
+                <p className="text-[11px] text-[#788395] text-center mt-2">Point camera directly at the other phone or laptop QR</p>
               </div>
             )}
 
             {scanResult && (
-              <div className="p-3 bg-emerald-50 text-emerald-700 text-xs font-medium rounded-xl border border-emerald-100 flex items-center gap-2">
-                <Check className="w-4 h-4" />
+              <div className="p-3.5 bg-[#E8FAF0] text-[#16A05A] text-xs font-medium rounded-2xl border border-[#c9f2dc] flex items-center gap-2">
+                <Check className="w-4 h-4 shrink-0" />
                 <span>{scanResult}</span>
               </div>
             )}
@@ -901,26 +894,29 @@ export default function SettingsView({ isMobileMode, onNavigate }) {
         )}
 
         {/* Paired Devices List */}
-        <div className="mt-5 pt-4 border-t border-slate-100">
-          <h4 className="text-xs font-semibold text-slate-700 mb-3">Paired Devices ({pairedDevices.length})</h4>
+        <div className="mt-5 pt-4 border-t border-[#E8EBF3]">
+          <h4 className="text-xs font-bold text-[#151B2D] mb-3">Paired Devices ({pairedDevices.length})</h4>
           {pairedDevices.length === 0 ? (
-            <p className="text-xs text-slate-400 py-2">No devices paired yet. Scan the QR code to pair.</p>
+            <p className="text-xs text-[#788395] py-2">No devices paired yet. Scan the QR code to pair.</p>
           ) : (
             <div className="space-y-2">
               {pairedDevices.map((d) => (
-                <div key={d.deviceId} className="flex items-center justify-between p-3 bg-slate-50 rounded-xl border border-slate-100">
-                  <div className="flex items-center gap-2.5">
-                    <div className="w-8 h-8 rounded-lg bg-white text-blue-600 flex items-center justify-center border border-slate-200">
+                <div key={d.deviceId} className="flex items-center justify-between p-3.5 bg-[#F8F9FD] rounded-2xl border border-[#E8EBF3]">
+                  <div className="flex items-center gap-3">
+                    <div className="w-9 h-9 rounded-full bg-white text-[#5865E9] flex items-center justify-center shadow-titan-sm">
                       {d.deviceType === 'laptop' ? <Laptop className="w-4 h-4" /> : <Smartphone className="w-4 h-4" />}
                     </div>
                     <div>
-                      <div className="font-semibold text-slate-800 text-xs">{d.deviceName}</div>
-                      <div className="text-[10px] text-emerald-600 font-medium">Paired • {d.ip || 'LAN'}</div>
+                      <div className="font-bold text-[#151B2D] text-xs">{d.deviceName}</div>
+                      <div className="text-[10px] text-[#16A05A] font-medium flex items-center gap-1 mt-0.5">
+                        <span className="w-1.5 h-1.5 rounded-full bg-[#16A05A] animate-pulse" />
+                        <span>Paired • {d.ip || 'LAN'}</span>
+                      </div>
                     </div>
                   </div>
                   <button
                     onClick={() => handleRemoveDevice(d.deviceId)}
-                    className="p-2 text-slate-400 hover:text-rose-500 rounded-lg hover:bg-white transition"
+                    className="p-2 text-[#788395] hover:text-[#F16B72] hover:bg-[#FFF0F2] rounded-xl transition"
                     title="Remove device"
                   >
                     <Trash2 className="w-4 h-4" />
@@ -934,15 +930,15 @@ export default function SettingsView({ isMobileMode, onNavigate }) {
       </div>
 
       {/* About Box */}
-      <div className="bg-white rounded-[22px] p-5 shadow-card border border-slate-100 flex items-center justify-between">
+      <div className="bg-white rounded-[26px] p-5 shadow-titan border border-[#E8EBF3] flex items-center justify-between">
         <div className="flex items-center gap-3">
-          <img src="/logo.png" alt="Titan Plus Share" className="w-10 h-10 rounded-xl object-cover shadow-sm" />
+          <img src="/logo.png" alt="Titan Plus Share" className="w-11 h-11 rounded-2xl object-cover shadow-titan-sm" />
           <div>
-            <h4 className="font-semibold text-slate-800 text-xs sm:text-sm">Titan Plus Share</h4>
-            <p className="text-[11px] text-slate-400">Fast • Simple • Anywhere</p>
+            <h4 className="font-extrabold text-[#151B2D] text-xs sm:text-sm">Titan Plus Share</h4>
+            <p className="text-[11px] text-[#788395]">Fast • Simple • Anywhere</p>
           </div>
         </div>
-        <span className="text-xs font-semibold px-2.5 py-1 bg-slate-100 text-slate-600 rounded-lg">v1.0.0</span>
+        <span className="text-xs font-bold px-3 py-1 bg-[#EEF1FF] text-[#5865E9] rounded-full">v1.0.0</span>
       </div>
 
     </div>

@@ -272,11 +272,11 @@ export default function IncomingTransferModal({ incoming, onClose }) {
   };
 
   return (
-    <div className="fixed inset-0 z-50 flex items-center justify-center p-3 sm:p-4 bg-slate-900/50 backdrop-blur-sm animate-fadeIn">
-      <div className="w-full max-w-sm sm:max-w-md bg-white rounded-[26px] p-4 sm:p-6 shadow-modal border border-slate-100 text-center relative overflow-hidden">
+    <div className="fixed inset-0 z-50 flex items-center justify-center p-3 sm:p-4 bg-[#151B2D]/40 backdrop-blur-sm animate-fadeIn">
+      <div className="w-full max-w-sm sm:max-w-md bg-white rounded-[32px] p-5 sm:p-7 shadow-titan-modal border border-[#E8EBF3] text-center relative overflow-hidden">
         
         {/* Top Notification Badge */}
-        <div className="inline-flex items-center gap-1.5 px-3 py-1 bg-blue-50 text-blue-700 text-xs font-semibold rounded-full mb-4 border border-blue-100">
+        <div className="inline-flex items-center gap-1.5 px-3.5 py-1 bg-[#EEF1FF] text-[#5865E9] text-xs font-bold rounded-full mb-4">
           <ArrowDownLeft className="w-3.5 h-3.5" />
           <span>{isText ? 'Text Message Received' : completed ? 'File Received' : 'Receiving File...'}</span>
         </div>
@@ -284,20 +284,20 @@ export default function IncomingTransferModal({ incoming, onClose }) {
         {/* Close Button */}
         <button
           onClick={onClose}
-          className="absolute top-4 right-4 w-7 h-7 rounded-full flex items-center justify-center text-slate-400 hover:text-slate-600 hover:bg-slate-100 transition"
+          className="absolute top-4 right-4 w-8 h-8 rounded-full flex items-center justify-center text-[#788395] hover:text-[#151B2D] hover:bg-[#F8F9FD] transition"
         >
           <X className="w-4 h-4" />
         </button>
 
         {/* Graphic */}
         <div className="my-2">
-          <div className="w-20 h-20 mx-auto rounded-3xl bg-blue-50 border border-blue-100 flex items-center justify-center shadow-inner">
+          <div className="w-20 h-20 mx-auto rounded-full bg-[#EEF1FF] flex items-center justify-center">
             {isText ? (
-              <AlignLeft className="w-10 h-10 text-blue-600" />
+              <AlignLeft className="w-9 h-9 text-[#8755E8]" />
             ) : completed ? (
-              <CheckCircle2 className="w-10 h-10 text-emerald-500 animate-scaleIn" />
+              <CheckCircle2 className="w-10 h-10 text-[#16A05A] animate-scaleIn" />
             ) : (
-              <FileText className="w-9 h-9 text-blue-600 animate-bounce" />
+              <FileText className="w-9 h-9 text-[#5865E9] animate-bounce" />
             )}
           </div>
         </div>
@@ -305,28 +305,28 @@ export default function IncomingTransferModal({ incoming, onClose }) {
         {/* Text Message Display (NO FILE CREATED) */}
         {isText ? (
           <div className="my-3">
-            <h3 className="font-bold text-slate-900 text-base mb-1">
+            <h3 className="font-bold text-[#151B2D] text-base mb-1">
               Shared by {incoming.senderName || 'Paired Device'}
             </h3>
-            <p className="text-[11px] text-slate-400 mb-3 font-medium">
+            <p className="text-[11px] text-[#788395] mb-3 font-medium">
               {(incoming.textContent || '').length} characters
             </p>
 
-            <div className="p-4 bg-slate-50 border border-slate-200/80 rounded-2xl text-left text-xs text-slate-800 font-mono whitespace-pre-wrap max-h-48 overflow-y-auto mb-4 select-text">
+            <div className="p-4 bg-[#F8F9FD] border border-[#E8EBF3] rounded-2xl text-left text-xs text-[#151B2D] font-mono whitespace-pre-wrap max-h-48 overflow-y-auto mb-4 select-text">
               {incoming.textContent}
             </div>
 
             <div className="flex gap-2">
               <button
                 onClick={handleCopyText}
-                className="flex-1 py-3 bg-blue-600 hover:bg-blue-700 text-white font-semibold text-xs rounded-xl transition flex items-center justify-center gap-2 shadow-md shadow-blue-500/25"
+                className="flex-1 py-3 bg-[#5865E9] hover:bg-[#4c57d8] text-white font-semibold text-xs rounded-2xl transition flex items-center justify-center gap-2 shadow-titan-sm"
               >
-                {copied ? <Check className="w-4 h-4 text-emerald-300" /> : <Copy className="w-4 h-4" />}
+                {copied ? <Check className="w-4 h-4 text-white" /> : <Copy className="w-4 h-4" />}
                 <span>{copied ? 'Copied to Clipboard!' : 'Copy Text'}</span>
               </button>
               <button
                 onClick={onClose}
-                className="py-3 px-4 bg-slate-100 hover:bg-slate-200 text-slate-600 font-semibold text-xs rounded-xl transition"
+                className="py-3 px-4 bg-[#F8F9FD] hover:bg-[#EEF1FF] text-[#788395] hover:text-[#5865E9] font-semibold text-xs rounded-2xl transition border border-[#E8EBF3]"
               >
                 Done
               </button>
@@ -335,26 +335,26 @@ export default function IncomingTransferModal({ incoming, onClose }) {
         ) : (
           /* File Transfer Display */
           <div className="my-3">
-            <h3 className="font-bold text-slate-900 text-base mb-1 truncate px-4">{incoming.fileName}</h3>
-            <p className="text-xs text-slate-500 font-medium mb-4">
+            <h3 className="font-bold text-[#151B2D] text-base mb-1 truncate px-4">{incoming.fileName}</h3>
+            <p className="text-xs text-[#788395] font-medium mb-4">
               From {incoming.senderName || 'Paired Device'} • {formatBytes(incoming.fileSize)}
             </p>
 
             {/* Real-time Percentage & Bytes */}
             {downloading && (
               <div className="mb-4">
-                <div className="w-full bg-slate-100 h-2.5 rounded-full overflow-hidden mb-1.5">
+                <div className="w-full bg-[#EEF1FF] h-2.5 rounded-full overflow-hidden mb-1.5">
                   <div 
-                    className="bg-blue-600 h-full rounded-full transition-all duration-200" 
+                    className="bg-[#5865E9] h-full rounded-full transition-all duration-200" 
                     style={{ width: `${progress}%` }} 
                   />
                 </div>
-                <div className="flex items-center justify-between text-[11px] font-semibold text-slate-600 px-1">
+                <div className="flex items-center justify-between text-[11px] font-semibold text-[#151B2D] px-1">
                   <span>{formatBytes(transferredBytes || (progress > 0 && incoming.fileSize ? Math.round((progress / 100) * incoming.fileSize) : 0))} / {formatBytes(incoming.fileSize)}</span>
-                  <span className="text-blue-600 font-bold">{progress}%</span>
+                  <span className="text-[#5865E9] font-bold">{progress}%</span>
                 </div>
                 {speed && !completed && (
-                  <div className="text-[11px] text-blue-600 font-semibold mt-1">
+                  <div className="text-[11px] text-[#5865E9] font-semibold mt-1">
                     Real Speed: {speed}
                   </div>
                 )}
@@ -363,11 +363,11 @@ export default function IncomingTransferModal({ incoming, onClose }) {
 
             {/* Saved location notice */}
             {completed && (
-              <div className="p-3 bg-slate-50 rounded-2xl border border-slate-100 mb-5 text-left flex items-start gap-2.5">
-                <FolderCheck className="w-4 h-4 text-emerald-600 shrink-0 mt-0.5" />
+              <div className="p-3.5 bg-[#F8F9FD] rounded-2xl border border-[#E8EBF3] mb-5 text-left flex items-start gap-2.5">
+                <FolderCheck className="w-4 h-4 text-[#16A05A] shrink-0 mt-0.5" />
                 <div className="min-w-0">
-                  <div className="text-[11px] font-semibold text-slate-700">Saved to Folder:</div>
-                  <div className="text-[10px] text-slate-500 truncate font-mono">{savePath}</div>
+                  <div className="text-[11px] font-semibold text-[#151B2D]">Saved to Folder:</div>
+                  <div className="text-[10px] text-[#788395] truncate font-mono">{savePath}</div>
                 </div>
               </div>
             )}
@@ -375,10 +375,10 @@ export default function IncomingTransferModal({ incoming, onClose }) {
             {/* Action Button */}
             <button
               onClick={completed ? onClose : handleCancel}
-              className={`w-full py-3 font-semibold text-xs rounded-xl transition shadow-md ${
+              className={`w-full py-3.5 font-semibold text-xs rounded-2xl transition shadow-titan-sm ${
                 completed 
-                  ? 'bg-blue-600 hover:bg-blue-700 text-white shadow-blue-500/25' 
-                  : 'bg-slate-100 hover:bg-slate-200 text-slate-600'
+                  ? 'bg-[#5865E9] hover:bg-[#4c57d8] text-white' 
+                  : 'bg-[#F8F9FD] hover:bg-[#EEF1FF] text-[#788395] border border-[#E8EBF3]'
               }`}
             >
               {completed ? 'Done' : 'Cancel Transfer'}
