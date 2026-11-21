@@ -340,16 +340,54 @@ export default function LinksView() {
   }, [showScanner]);
 
   // Bulletproof Multi-platform Download
-  const handleStartDownload = () => {
+  const handleStartDownload = async () => {
     if (!fileInfo) return;
     setError(null);
     setDownloading(true);
     setProgress(5);
     setDownloadSuccess(false);
 
-    // Priority: Public HTTPS Cloudflare Tunnel URL works across ALL networks (Cellular 5G/4G & external Wi-Fi)
-    // Fallback: Direct LAN IP URL for same-network streaming
-    const downloadUrl = fileInfo.publicUrl || fileInfo.directUrl || `${getServerUrl()}/api/links/download/${fileInfo.token}`;
+    // 1. If publicUrl is missing, auto-fetch latest metadata from Vercel relay
+    let activePublicUrl = fileInfo.publicUrl;
+    if (!activePublicUrl && fileInfo.token) {
+      try {
+        const vRes = await fetch(`https://titan-plus-share.vercel.app/api/links/info/${fileInfo.token}`, { signal: AbortSignal.timeout(2500) });
+        if (vRes.ok) {
+          const fresh = await vRes.json();
+          if (fresh && fresh.publicUrl) {
+            activePublicUrl = fresh.publicUrl;
+            setFileInfo(prev => ({ ...prev, ...fresh }));
+          }
+        }
+      } catch (e) {}
+    }
+
+    // 2. Fast check if host laptop is reachable on current Local LAN (1.2s ping)
+    let isSameLan = false;
+    if (fileInfo.laptopIp && fileInfo.laptopIp !== '127.0.0.1' && fileInfo.laptopIp !== 'localhost') {
+      try {
+        const ping = await fetch(`http://${fileInfo.laptopIp}:${fileInfo.laptopPort || 51733}/api/status`, { signal: AbortSignal.timeout(1200) });
+        if (ping.ok) {
+          isSameLan = true;
+        }
+      } catch (e) {
+        isSameLan = false;
+      }
+    }
+
+    // 3. Intelligent Endpoint Selection:
+    // If on same Wi-Fi -> Ultra-fast Direct LAN
+    // If on different networks or cellular (Jio/Airtel) -> High-Speed Remote Cloudflare/Public Tunnel
+    let downloadUrl = '';
+    if (isSameLan && fileInfo.directUrl) {
+      downloadUrl = fileInfo.directUrl;
+    } else if (activePublicUrl) {
+      downloadUrl = activePublicUrl;
+    } else if (fileInfo.directUrl) {
+      downloadUrl = fileInfo.directUrl;
+    } else {
+      downloadUrl = `${getServerUrl()}/api/links/download/${fileInfo.token}`;
+    }
 
     // Handle Text Note directly
     if (fileInfo.type === 'text') {
@@ -402,8 +440,8 @@ export default function LinksView() {
       const handleNativeError = async (e) => {
         const errMsg = e.detail?.error || 'Download failed on device';
         
-        // Auto-heal on DNS expiration or network change:
-        if (errMsg.includes('Unable to resolve host') || errMsg.includes('No address associated') || errMsg.includes('UnknownHostException')) {
+        // Auto-heal on DNS expiration, host unreachable, or network switch:
+        if (errMsg.includes('Unable to resolve host') || errMsg.includes('No address associated') || errMsg.includes('UnknownHostException') || errMsg.includes('unreachable on this local network') || errMsg.includes('failed to connect')) {
           try {
             const vRes = await fetch(`https://titan-plus-share.vercel.app/api/links/info/${fileInfo.token}`, { signal: AbortSignal.timeout(3000) });
             if (vRes.ok) {

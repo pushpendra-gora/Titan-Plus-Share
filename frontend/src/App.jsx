@@ -216,6 +216,14 @@ export default function App() {
                 size: item.text?.length || 0,
                 text: item.text
               });
+            } else if (item.type === 'files') {
+              setSelectedItem({
+                type: 'files',
+                name: item.name || `${item.files?.length || 0} Files Selected`,
+                size: item.size || 0,
+                fileCount: item.fileCount || item.files?.length || 0,
+                files: item.files || []
+              });
             } else if (item.type === 'file') {
               let fileObj = null;
               if (item.cachePath) {
@@ -248,13 +256,21 @@ export default function App() {
 
     const handleIncomingShare = async (e) => {
       if (e.detail) {
-        const { type, payload, name, size } = e.detail;
+        const { type, payload, name, size, files, fileCount } = e.detail;
         if (type === 'text') {
           setSelectedItem({
             type: 'text',
             name: name || 'Shared Text',
             size: payload.length,
             text: payload
+          });
+        } else if (type === 'files') {
+          setSelectedItem({
+            type: 'files',
+            name: name || `${fileCount || files?.length || 0} Files Selected`,
+            size: size || 0,
+            fileCount: fileCount || files?.length || 0,
+            files: files || []
           });
         } else {
           let fileObj = null;
@@ -509,40 +525,82 @@ export default function App() {
 
   // File Picker Handlers
   const handleFileChange = (e) => {
-    const file = e.target.files?.[0];
-    if (file) {
-      setSelectedItem({
-        type: 'file',
-        name: file.name,
-        size: file.size,
-        file: file
-      });
+    const rawFiles = e.target.files;
+    if (rawFiles && rawFiles.length > 0) {
+      if (rawFiles.length === 1) {
+        const file = rawFiles[0];
+        setSelectedItem({
+          type: 'file',
+          name: file.name,
+          size: file.size,
+          file: file
+        });
+      } else {
+        const filesArr = Array.from(rawFiles);
+        let totalSize = 0;
+        filesArr.forEach(f => { totalSize += f.size; });
+        setSelectedItem({
+          type: 'files',
+          name: `${filesArr.length} Files Selected`,
+          size: totalSize,
+          fileCount: filesArr.length,
+          files: filesArr
+        });
+      }
     }
     e.target.value = '';
   };
 
   const handleMediaPhotoChange = (e) => {
-    const file = e.target.files?.[0];
-    if (file) {
-      setSelectedItem({
-        type: 'media',
-        name: file.name,
-        size: file.size,
-        file: file
-      });
+    const rawFiles = e.target.files;
+    if (rawFiles && rawFiles.length > 0) {
+      if (rawFiles.length === 1) {
+        const file = rawFiles[0];
+        setSelectedItem({
+          type: 'media',
+          name: file.name,
+          size: file.size,
+          file: file
+        });
+      } else {
+        const filesArr = Array.from(rawFiles);
+        let totalSize = 0;
+        filesArr.forEach(f => { totalSize += f.size; });
+        setSelectedItem({
+          type: 'files',
+          name: `${filesArr.length} Photos Selected`,
+          size: totalSize,
+          fileCount: filesArr.length,
+          files: filesArr
+        });
+      }
     }
     e.target.value = '';
   };
 
   const handleMediaVideoChange = (e) => {
-    const file = e.target.files?.[0];
-    if (file) {
-      setSelectedItem({
-        type: 'media',
-        name: file.name,
-        size: file.size,
-        file: file
-      });
+    const rawFiles = e.target.files;
+    if (rawFiles && rawFiles.length > 0) {
+      if (rawFiles.length === 1) {
+        const file = rawFiles[0];
+        setSelectedItem({
+          type: 'media',
+          name: file.name,
+          size: file.size,
+          file: file
+        });
+      } else {
+        const filesArr = Array.from(rawFiles);
+        let totalSize = 0;
+        filesArr.forEach(f => { totalSize += f.size; });
+        setSelectedItem({
+          type: 'files',
+          name: `${filesArr.length} Videos Selected`,
+          size: totalSize,
+          fileCount: filesArr.length,
+          files: filesArr
+        });
+      }
     }
     e.target.value = '';
   };
@@ -679,9 +737,9 @@ export default function App() {
       <div className="ambient-bg" />
 
       {/* Hidden inputs */}
-      <input type="file" ref={fileInputRef} onChange={handleFileChange} className="hidden" />
-      <input type="file" ref={mediaPhotoInputRef} accept="image/*" onChange={handleMediaPhotoChange} className="hidden" />
-      <input type="file" ref={mediaVideoInputRef} accept="video/*" onChange={handleMediaVideoChange} className="hidden" />
+      <input type="file" ref={fileInputRef} multiple onChange={handleFileChange} className="hidden" />
+      <input type="file" ref={mediaPhotoInputRef} accept="image/*" multiple onChange={handleMediaPhotoChange} className="hidden" />
+      <input type="file" ref={mediaVideoInputRef} accept="video/*" multiple onChange={handleMediaVideoChange} className="hidden" />
       <input 
         type="file" 
         ref={folderInputRef} 

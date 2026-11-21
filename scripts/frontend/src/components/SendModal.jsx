@@ -1,0 +1,749 @@
+import React, { useState, useEffect, useRef } from 'react';
+import { X, Wifi, Link as LinkIcon, Laptop, Smartphone, CheckCircle, Copy, QrCode, ArrowRight, Clock, Plus, Camera, RefreshCw, Image, ArrowDownCircle, CheckCircle2, Radio, Eye } from 'lucide-react';
+import { formatBytes, generateShareLink, generateFolderShareLink, getPairedDevices, getOnlinePeers, getServerUrl, setServerUrl, getPairingInfo, getDeviceId, getDeviceName, authenticateDevice } from '../api';
+import { Capacitor } from '@capacitor/core';
+import { Html5Qrcode } from 'html5-qrcode';
+import confetti from 'canvas-confetti';
+
+export default function SendModal({ item, onClose, onStartTransfer }) {
+  const [view, setView] = useState('menu'); // 'menu' | 'devices' | 'pairing' | 'link'
+  const [loading, setLoading] = useState(false);
+  const [linkData, setLinkData] = useState(null);
+  const [copied, setCopied] = useState(false);
+  const [showQr, setShowQr] = useState(false);
+  const [pairedDevices, setPairedDevices] = useState([]);
+  const [scanningDevices, setScanningDevices] = useState(false);
+  const [pairingData, setPairingData] = useState(null);
+  const [scanning, setScanning] = useState(false);
+  const [scanMessage, setScanMessage] = useState(null);
+  const [liveDownload, setLiveDownload] = useState(null); // { percent, status: 'waiting'|'downloading'|'completed' }
+  const imageInputRef = useRef(null);
+
+  const loadDevices = async () => {
+    setScanningDevices(true);
+    try {
+      const devices = await getOnlinePeers();
+      setPairedDevices(devices || []);
+    } catch (e) {
+      setPairedDevices([]);
+    } finally {
+      setScanningDevices(false);
+    }
+  };
+
+  useEffect(() => {
+    loadDevices();
+  }, []);
+
+  // Handle Mobile hardware / gesture back button
+  useEffect(() => {
+    if (typeof window.registerTitanBackHandler === 'function') {
+      return window.registerTitanBackHandler(() => {
+        if (scanning) {
+          setScanning(false);
+          return true;
+        }
+        if (view !== 'menu') {
+          setView('menu');
+          return true;
+        }
+        onClose();
+        return true;
+      });
+    }
+  }, [scanning, view, onClose]);
+
+  const openPairing = async () => {
+    setView('pairing');
+    try {
+      const pair = await getPairingInfo();
+      setPairingData(pair);
+    } catch (e) {}
+  };
+
+  // Mobile camera scanner inside modal
+  const processPairing = async (decodedText) => {
+    try {
+      const text = typeof decodedText === 'string' ? decodedText.trim() : JSON.stringify(decodedText);
+
+      // Check if URL or link QR
+      if (text.startsWith('http://') || text.startsWith('https://') || text.includes('/d/')) {
+        try {
+          const parsed = new URL(text);
+          if (parsed.hostname && parsed.hostname !== 'localhost' && !parsed.hostname.includes('vercel.app')) {
+            setServerUrl(parsed.origin);
+          }
+        } catch (e) {}
+        setScanMessage('Detected Titan link! Server URL updated.');
+        setScanning(false);
+        await loadDevices();
+        setTimeout(() => setView('devices'), 800);
+        return;
+      }
+
+      let payload = null;
+      try {
+        payload = JSON.parse(text);
+      } catch (e) {}
+
+      if (payload && (payload.appName === 'Titan Plus Share' || payload.token || payload.deviceId || payload.ip)) {
+        const peerType = payload.type || 'mobile';
+        const laptopIp = payload.ip || (payload.ips && payload.ips[0]) || '';
+        const laptopPort = payload.port || 51733;
+        const targetUrl = payload.serverUrl || (laptopIp ? `http://${laptopIp}:${laptopPort}` : null);
+        if (targetUrl) {
+          setServerUrl(targetUrl);
+        }
+
+        const localList = JSON.parse(localStorage.getItem('titan_local_paired') || '[]');
+        const newDevice = {
+          deviceId: payload.deviceId || payload.token || ('dev_' + (payload.name || 'peer')),
+          deviceName: payload.name || (peerType === 'laptop' ? 'Laptop Server' : 'Mobile Device'),
+          deviceType: peerType,
+          ip: laptopIp || 'LAN',
+          ips: payload.ips || (laptopIp ? [laptopIp] : ['LAN']),
+          port: laptopPort,
+          serverUrl: targetUrl,
+          pairedAt: Date.now()
+        };
+        const updated = localList.filter(d => d.deviceId !== newDevice.deviceId && d.deviceName !== newDevice.deviceName);
+        updated.push(newDevice);
+        localStorage.setItem('titan_local_paired', JSON.stringify(updated));
+
+        try {
+          await authenticateDevice({
+            deviceId: getDeviceId(),
+            deviceName: getDeviceName(),
+            deviceType: 'mobile',
+            pairingToken: payload.token || payload.deviceId,
+            peerDevice: newDevice
+          });
+        } catch (e) {}
+
+        setScanMessage(`Paired with ${newDevice.deviceName} successfully!`);
+        setScanning(false);
+        await loadDevices();
+        setTimeout(() => setView('devices'), 1000);
+      } else {
+        setScanMessage('Please scan a Titan Plus Share pairing QR code.');
+      }
+    } catch (e) {
+      setScanMessage('Invalid pairing QR code.');
+    }
+  };
+
+  const modalScannerDomId = useRef(`modal-qr-${Math.random().toString(36).substring(2, 7)}`);
+
+  useEffect(() => {
+    if (!scanning || view !== 'pairing') return;
+
+    let qrCodeInstance = null;
+    let isStopped = false;
+
+    const startDirectCamera = async () => {
+      try {
+        const domId = modalScannerDomId.current;
+        const targetEl = document.getElementById(domId);
+        if (!targetEl) return;
+
+        qrCodeInstance = new Html5Qrcode(domId);
+        const config = {
+          fps: 15,
+          qrbox: (viewfinderWidth, viewfinderHeight) => {
+            const minEdge = Math.min(viewfinderWidth, viewfinderHeight);
+            const boxSize = Math.max(50, Math.floor(minEdge * 0.72));
+            return { width: boxSize, height: boxSize };
+          }
+        };
+
+        const onScanSuccess = async (decodedText) => {
+          if (isStopped) return;
+          isStopped = true;
+          try {
+            if (qrCodeInstance && qrCodeInstance.isScanning) {
+              await qrCodeInstance.stop();
+            }
+          } catch (e) {}
+          setScanning(false);
+          await processPairing(decodedText);
+        };
+
+        // Immediately start camera directly without any buttons or dropdowns
+        try {
+          await qrCodeInstance.start({ facingMode: "environment" }, config, onScanSuccess, () => {});
+        } catch (camErr) {
+          try {
+            await qrCodeInstance.start({ facingMode: "user" }, config, onScanSuccess, () => {});
+          } catch (frontErr) {
+            try {
+              const cameras = await Html5Qrcode.getCameras();
+              if (cameras && cameras.length > 0) {
+                await qrCodeInstance.start(cameras[0].id, config, onScanSuccess, () => {});
+              } else {
+                throw new Error('No camera found');
+              }
+            } catch (allErr) {
+              setScanMessage('Camera permission required. Please allow camera in app settings.');
+              setScanning(false);
+            }
+          }
+        }
+      } catch (e) {
+        console.warn('Modal camera start error:', e);
+        setScanMessage('Could not open camera.');
+        setScanning(false);
+      }
+    };
+
+    const timer = setTimeout(startDirectCamera, 80);
+
+    return () => {
+      isStopped = true;
+      clearTimeout(timer);
+      if (qrCodeInstance) {
+        try {
+          if (qrCodeInstance.isScanning) {
+            qrCodeInstance.stop().then(() => {
+              try { qrCodeInstance.clear(); } catch (e) {}
+            }).catch(() => {});
+          } else {
+            try { qrCodeInstance.clear(); } catch (e) {}
+          }
+        } catch (e) {}
+      }
+    };
+  }, [scanning, view]);
+
+  const handleScanFromImage = async (e) => {
+    const file = e.target.files?.[0];
+    if (!file) return;
+
+    try {
+      const html5QrCode = new Html5Qrcode("modal-qr-image-decoder");
+      const decodedText = await html5QrCode.scanFile(file, false);
+      await processPairing(decodedText);
+    } catch (err) {
+      setScanMessage('Could not detect QR code in this photo. Please try camera scan.');
+    }
+    e.target.value = '';
+  };
+
+  const handleGenerateLink = async () => {
+    setLoading(true);
+    try {
+      let res;
+      if (item.type === 'folder' && item.files) {
+        res = await generateFolderShareLink(item.files, item.name);
+      } else if (item.type === 'text') {
+        res = await generateShareLink(null, 'text', item.text);
+      } else {
+        let fileToSend = item.file;
+        if (!fileToSend && item.cachePath) {
+          try {
+            const resBlob = await fetch(Capacitor.convertFileSrc(item.cachePath));
+            const blob = await resBlob.blob();
+            fileToSend = new File([blob], item.name, { type: blob.type || 'application/octet-stream' });
+          } catch (e) {
+            console.warn('Could not read cached file for link:', e);
+          }
+        }
+        res = await generateShareLink(fileToSend, item.type);
+      }
+      setLinkData(res);
+      setLiveDownload({ status: 'waiting', percent: 0 });
+
+      // Save to local link history
+      try {
+        const localHistory = JSON.parse(localStorage.getItem('titan_local_created_links') || '[]');
+        const updated = [{
+          token: res.token,
+          fileName: res.fileName,
+          fileSize: res.fileSize,
+          type: item.type === 'text' ? 'text' : 'file',
+          textContent: item.type === 'text' ? item.text : null,
+          url: res.url,
+          qrCode: res.qrCode,
+          createdAt: Date.now(),
+          expiresAt: res.expiresAt,
+          status: 'pending'
+        }, ...localHistory.filter(l => l.token !== res.token)].slice(0, 50);
+        localStorage.setItem('titan_local_created_links', JSON.stringify(updated));
+      } catch (e) {}
+
+      setView('link');
+    } catch (err) {
+      alert('Error generating link: ' + err.message);
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  // Listen for real-time recipient download progress on this generated link
+  useEffect(() => {
+    if (!linkData?.token) return;
+
+    const handleProgress = (e) => {
+      if (e.detail?.token === linkData.token) {
+        setLiveDownload({
+          percent: e.detail.percent || 0,
+          bytesSent: e.detail.bytesSent || 0,
+          totalBytes: e.detail.totalBytes || 0,
+          status: e.detail.percent >= 100 ? 'completed' : 'downloading'
+        });
+      }
+    };
+
+    const handleAccessed = (e) => {
+      if (e.detail?.token === linkData.token) {
+        setLiveDownload(prev => (prev?.status === 'completed' || prev?.status === 'downloading' ? prev : { percent: 0, status: 'accessed' }));
+      }
+    };
+
+    const handleCompleted = (e) => {
+      if (e.detail?.token === linkData.token) {
+        setLiveDownload({ percent: 100, status: 'completed' });
+        confetti({ particleCount: 70, spread: 60, origin: { y: 0.6 } });
+      }
+    };
+
+    const handleLinksUpdated = (e) => {
+      const list = e.detail || [];
+      const current = list.find(l => l.id === linkData.token);
+      if (current) {
+        if (current.status === 'downloaded' || current.downloadCount > 0) {
+          setLiveDownload({ percent: 100, status: 'completed' });
+        } else if (current.status === 'accessed') {
+          setLiveDownload(prev => (prev?.status === 'completed' || prev?.status === 'downloading' ? prev : { percent: 0, status: 'accessed' }));
+        } else if (current.status === 'downloading') {
+          setLiveDownload({ percent: current.downloadProgress || 50, status: 'downloading' });
+        }
+      }
+    };
+
+    window.addEventListener('titan-link-progress', handleProgress);
+    window.addEventListener('titan-link-accessed', handleAccessed);
+    window.addEventListener('titan-link-completed', handleCompleted);
+    window.addEventListener('titan-links-updated', handleLinksUpdated);
+    return () => {
+      window.removeEventListener('titan-link-progress', handleProgress);
+      window.removeEventListener('titan-link-accessed', handleAccessed);
+      window.removeEventListener('titan-link-completed', handleCompleted);
+      window.removeEventListener('titan-links-updated', handleLinksUpdated);
+    };
+  }, [linkData]);
+
+  const handleCopy = () => {
+    if (linkData?.url) {
+      navigator.clipboard.writeText(linkData.url);
+      setCopied(true);
+      setTimeout(() => setCopied(false), 2500);
+    }
+  };
+
+  const getItemBadge = () => {
+    if (item.type === 'folder') return 'DIR';
+    if (item.type === 'text') return 'TXT';
+    if (item.type === 'media') return 'IMG';
+    const ext = item.name.split('.').pop()?.toUpperCase() || 'FILE';
+    return ext.substring(0, 4);
+  };
+
+  return (
+    <div className="fixed inset-0 z-50 flex items-end sm:items-center justify-center p-0 sm:p-4 bg-[#151B2D]/40 backdrop-blur-sm animate-fadeIn">
+      <div className="w-full sm:max-w-md bg-white rounded-t-[32px] sm:rounded-[32px] p-5 sm:p-7 shadow-titan-modal border border-[#E8EBF3] max-h-[90vh] overflow-y-auto pb-[max(20px,env(safe-area-inset-bottom))] sm:pb-7">
+        
+        {/* Selected Content Card */}
+        <div className="flex items-center justify-between p-4 bg-[#F8F9FD] rounded-2xl border border-[#E8EBF3] mb-5">
+          <div className="flex items-center gap-3.5 min-w-0">
+            <div className="w-12 h-12 rounded-full bg-[#EEF1FF] text-[#5865E9] flex items-center justify-center font-bold text-xs tracking-wider shrink-0">
+              {getItemBadge()}
+            </div>
+            <div className="min-w-0">
+              <h4 className="font-bold text-[#151B2D] text-sm truncate">{item.name}</h4>
+              <p className="text-xs text-[#788395] font-medium">
+                {item.type === 'folder' 
+                  ? `${item.fileCount || (item.files ? item.files.length : 1)} files • ${formatBytes(item.size)}`
+                  : formatBytes(item.size)}
+              </p>
+            </div>
+          </div>
+          <button 
+            onClick={onClose}
+            className="w-8 h-8 rounded-full flex items-center justify-center text-[#788395] hover:text-[#151B2D] hover:bg-white transition"
+          >
+            <X className="w-4 h-4" />
+          </button>
+        </div>
+
+        {/* View 1: Send How Menu */}
+        {view === 'menu' && (
+          <div>
+            <h3 className="text-xs font-bold uppercase tracking-wider text-[#788395] mb-3 px-1">Send How?</h3>
+            <div className="space-y-3">
+              
+              {/* Option 1: Same Network */}
+              <button
+                onClick={() => setView('devices')}
+                className="w-full flex items-center justify-between p-4 bg-[#EEF1FF]/60 hover:bg-[#EEF1FF] border border-[#dce1ff] rounded-[24px] transition group text-left"
+              >
+                <div className="flex items-center gap-3.5">
+                  <div className="w-12 h-12 rounded-full bg-[#5865E9] text-white flex items-center justify-center shadow-titan-sm">
+                    <Wifi className="w-5 h-5" />
+                  </div>
+                  <div>
+                    <div className="font-bold text-[#151B2D] text-sm">Same Network (Fast)</div>
+                    <div className="text-xs text-[#788395]">Send directly to paired devices on LAN</div>
+                  </div>
+                </div>
+                <ArrowRight className="w-4 h-4 text-[#788395] group-hover:text-[#5865E9] group-hover:translate-x-1 transition" />
+              </button>
+
+              {/* Option 2: Generate Link */}
+              <button
+                onClick={handleGenerateLink}
+                disabled={loading}
+                className="w-full flex items-center justify-between p-4 bg-[#F8F9FD] hover:bg-[#EEF1FF]/40 border border-[#E8EBF3] rounded-[24px] transition group text-left"
+              >
+                <div className="flex items-center gap-3.5">
+                  <div className="w-12 h-12 rounded-full bg-[#F4EFFF] text-[#8755E8] flex items-center justify-center">
+                    <LinkIcon className="w-5 h-5" />
+                  </div>
+                  <div>
+                    <div className="font-bold text-[#151B2D] text-sm">Generate Link (Anywhere)</div>
+                    <div className="text-xs text-[#788395]">Create a 3-hour download link to share</div>
+                  </div>
+                </div>
+                {loading ? (
+                  <div className="w-4 h-4 border-2 border-[#5865E9] border-t-transparent rounded-full animate-spin mr-1" />
+                ) : (
+                  <ArrowRight className="w-4 h-4 text-[#788395] group-hover:text-[#8755E8] group-hover:translate-x-1 transition" />
+                )}
+              </button>
+            </div>
+          </div>
+        )}
+
+        {/* View 2: Device Selection (Live Same-Network Devices ONLY) */}
+        {view === 'devices' && (
+          <div>
+            <div className="flex items-center justify-between mb-3 px-1">
+              <div>
+                <h3 className="text-sm font-bold text-[#151B2D]">Direct Transfer (Same Network)</h3>
+                <p className="text-[11px] text-[#788395]">Showing devices active on this Wi-Fi right now</p>
+              </div>
+              <div className="flex items-center gap-2">
+                <button
+                  onClick={loadDevices}
+                  disabled={scanningDevices}
+                  title="Scan Network"
+                  className="p-1.5 text-[#788395] hover:text-[#5865E9] hover:bg-[#EEF1FF] rounded-lg transition"
+                >
+                  <RefreshCw className={`w-3.5 h-3.5 ${scanningDevices ? 'animate-spin text-[#5865E9]' : ''}`} />
+                </button>
+                <button 
+                  onClick={() => setView('menu')}
+                  className="text-xs text-[#5865E9] font-bold hover:underline"
+                >
+                  Back
+                </button>
+              </div>
+            </div>
+
+            {scanningDevices && pairedDevices.length === 0 ? (
+              <div className="py-8 text-center bg-[#F8F9FD] rounded-2xl border border-[#E8EBF3] mb-3">
+                <div className="w-10 h-10 rounded-full border-2 border-[#5865E9] border-t-transparent animate-spin mx-auto mb-2" />
+                <p className="text-xs font-bold text-[#151B2D]">Scanning active Wi-Fi network...</p>
+                <p className="text-[11px] text-[#788395]">Detecting reachable devices on this subnet</p>
+              </div>
+            ) : pairedDevices.length > 0 ? (
+              <div className="space-y-2.5">
+                {pairedDevices.map((dev) => {
+                  const isOnline = dev.status === 'online';
+                  return (
+                    <button
+                      key={dev.deviceId}
+                      onClick={() => onStartTransfer(dev, item)}
+                      className="w-full flex items-center justify-between p-3.5 bg-white hover:bg-[#F8F9FD] border border-[#E8EBF3] hover:border-[#5865E9]/30 rounded-2xl shadow-titan transition group text-left"
+                    >
+                      <div className="flex items-center gap-3">
+                        <div className={`w-10 h-10 rounded-full flex items-center justify-center transition duration-200 ${
+                          isOnline ? 'bg-[#E8FAF0] text-[#16A05A]' : 'bg-[#EEF1FF] text-[#5865E9]'
+                        }`}>
+                          {dev.deviceType === 'laptop' ? <Laptop className="w-5 h-5" /> : <Smartphone className="w-5 h-5" />}
+                        </div>
+                        <div>
+                          <div className="flex items-center gap-2">
+                            <span className="font-bold text-[#151B2D] text-sm">{dev.deviceName}</span>
+                            <span className={`w-2 h-2 rounded-full inline-block ${isOnline ? 'bg-[#16A05A] animate-pulse' : 'bg-[#5865E9]'}`} />
+                          </div>
+                          <span className="text-[11px] font-medium flex items-center gap-1.5 mt-0.5">
+                            {isOnline ? (
+                              <span className="text-[#16A05A] font-semibold">Online • Ready</span>
+                            ) : (
+                              <span className="text-[#5865E9] font-semibold">On Wi-Fi • Tap to Send</span>
+                            )}
+                            {dev.ip && <span className="text-[#788395]">({dev.ip})</span>}
+                          </span>
+                        </div>
+                      </div>
+                      <ArrowRight className="w-4 h-4 text-[#788395] group-hover:text-[#5865E9] group-hover:translate-x-0.5 transition" />
+                    </button>
+                  );
+                })}
+
+                <button
+                  onClick={openPairing}
+                  className="w-full py-3 px-3 border border-dashed border-[#E8EBF3] hover:border-[#5865E9] rounded-2xl text-xs font-semibold text-[#788395] hover:text-[#5865E9] flex items-center justify-center gap-1.5 transition"
+                >
+                  <Plus className="w-3.5 h-3.5" />
+                  <span>Pair Another Device via QR</span>
+                </button>
+              </div>
+            ) : (
+              /* REAL EMPTY STATE WHEN NO DEVICES DETECTED ON THIS NETWORK */
+              <div className="p-6 bg-[#F8F9FD] rounded-2xl border border-[#E8EBF3] text-center">
+                <div className="w-14 h-14 rounded-full bg-[#EEF1FF] text-[#5865E9] flex items-center justify-center mx-auto mb-3">
+                  <Radio className="w-7 h-7 text-[#5865E9] animate-pulse" />
+                </div>
+                <h4 className="font-bold text-[#151B2D] text-sm mb-1">No Active Devices Detected</h4>
+                <p className="text-xs text-[#788395] mb-4 max-w-xs mx-auto">
+                  Ensure both your laptop and mobile device are connected to the exact same Wi-Fi network.
+                </p>
+                <div className="flex gap-2">
+                  <button
+                    onClick={loadDevices}
+                    className="flex-1 py-2.5 bg-white hover:bg-[#F8F9FD] text-[#151B2D] rounded-xl text-xs font-semibold flex items-center justify-center gap-1.5 transition border border-[#E8EBF3]"
+                  >
+                    <RefreshCw className="w-3.5 h-3.5" />
+                    <span>Scan Again</span>
+                  </button>
+                  <button
+                    onClick={openPairing}
+                    className="flex-1 py-2.5 bg-[#5865E9] hover:bg-[#4c57d8] text-white rounded-xl text-xs font-semibold flex items-center justify-center gap-1.5 shadow-titan-sm transition"
+                  >
+                    <QrCode className="w-3.5 h-3.5" />
+                    <span>Pair via QR</span>
+                  </button>
+                </div>
+              </div>
+            )}
+          </div>
+        )}
+
+        {/* View 3: Pair Device QR View */}
+        {view === 'pairing' && (
+          <div className="text-center py-1">
+            <div className="flex items-center justify-between mb-3 px-1">
+              <h3 className="text-sm font-bold text-[#151B2D]">Pair Device via QR Code</h3>
+              <button 
+                onClick={() => setView('devices')}
+                className="text-xs text-[#5865E9] font-bold hover:underline"
+              >
+                Back
+              </button>
+            </div>
+
+            {/* Hidden decoder container */}
+            <div id="modal-qr-image-decoder" className="hidden"></div>
+            <input 
+              type="file" 
+              ref={imageInputRef} 
+              accept="image/*" 
+              onChange={handleScanFromImage} 
+              className="hidden" 
+            />
+
+            {/* Option to Scan with Camera or Image */}
+            <div className="mb-4">
+              <div className="flex items-center gap-2">
+                <button
+                  onClick={() => setScanning(!scanning)}
+                  className="flex-1 py-2.5 bg-[#EEF1FF] hover:bg-[#5865E9] text-[#5865E9] hover:text-white rounded-2xl text-xs font-semibold flex items-center justify-center gap-1.5 transition"
+                >
+                  <Camera className="w-4 h-4" />
+                  <span>{scanning ? 'Close Camera' : 'Camera Scan'}</span>
+                </button>
+                <button
+                  onClick={() => imageInputRef.current?.click()}
+                  className="px-4 py-2.5 bg-white hover:bg-[#F8F9FD] text-[#151B2D] border border-[#E8EBF3] rounded-2xl text-xs font-semibold flex items-center gap-1.5 transition shadow-titan-sm"
+                >
+                  <Image className="w-4 h-4 text-[#5865E9]" />
+                  <span>Choose Photo</span>
+                </button>
+              </div>
+
+              {scanning && (
+                <div className="mt-3 relative overflow-hidden rounded-2xl bg-black aspect-square max-w-[260px] mx-auto shadow-inner">
+                  <div id={modalScannerDomId.current} className="w-full h-full min-h-[240px]"></div>
+                  {/* Viewfinder Aiming Overlay */}
+                  <div className="absolute inset-0 border-2 border-[#5865E9]/40 rounded-2xl pointer-events-none flex items-center justify-center">
+                    <div className="w-48 h-48 border border-white/40 rounded-xl relative">
+                      <div className="absolute -top-0.5 -left-0.5 w-4 h-4 border-t-2 border-l-2 border-[#5865E9] rounded-tl"></div>
+                      <div className="absolute -top-0.5 -right-0.5 w-4 h-4 border-t-2 border-r-2 border-[#5865E9] rounded-tr"></div>
+                      <div className="absolute -bottom-0.5 -left-0.5 w-4 h-4 border-b-2 border-l-2 border-[#5865E9] rounded-bl"></div>
+                      <div className="absolute -bottom-0.5 -right-0.5 w-4 h-4 border-b-2 border-r-2 border-[#5865E9] rounded-br"></div>
+                    </div>
+                  </div>
+                </div>
+              )}
+
+              {scanMessage && (
+                <div className="mt-3 p-3 bg-[#E8FAF0] text-[#16A05A] text-xs font-semibold rounded-2xl border border-[#c9f2dc] flex items-center justify-center gap-1.5">
+                  <CheckCircle className="w-4 h-4" />
+                  <span>{scanMessage}</span>
+                </div>
+              )}
+            </div>
+
+            {/* Display QR code for other device to scan */}
+            {pairingData?.qrCode ? (
+              <div className="p-4 bg-[#F8F9FD] rounded-2xl border border-[#E8EBF3] inline-block mb-3 max-w-full overflow-hidden">
+                <img src={pairingData.qrCode} alt="Pairing QR" className="w-36 sm:w-44 h-36 sm:h-44 max-w-full rounded-xl mx-auto shadow-sm bg-white p-2 border border-[#E8EBF3] object-contain" />
+                <p className="text-[11px] text-[#788395] mt-2 font-medium truncate">
+                  {pairingData.payload?.name} ({pairingData.payload?.ip})
+                </p>
+                <p className="text-[10px] text-[#788395]/70 mt-0.5">
+                  Scan this code using Titan Plus Share on your other device
+                </p>
+              </div>
+            ) : (
+              <div className="py-8">
+                <RefreshCw className="w-6 h-6 animate-spin text-[#5865E9] mx-auto" />
+              </div>
+            )}
+
+            <button
+              onClick={async () => {
+                await loadDevices();
+                setView('devices');
+              }}
+              className="w-full py-3 bg-[#EEF1FF] hover:bg-[#5865E9] text-[#5865E9] hover:text-white font-semibold text-xs rounded-2xl transition mt-2"
+            >
+              Done / Check Paired Devices
+            </button>
+          </div>
+        )}
+
+        {/* View 4: Download Link Generated */}
+        {view === 'link' && linkData && (
+          <div className="text-center py-1">
+            <div className="inline-flex items-center gap-1.5 px-3.5 py-1 bg-[#E8FAF0] text-[#16A05A] rounded-full text-xs font-bold mb-4 border border-[#c9f2dc]">
+              <CheckCircle className="w-3.5 h-3.5" />
+              <span>Download Link Generated</span>
+            </div>
+
+            {/* Link Box */}
+            <div className="flex items-center gap-2 p-2 bg-[#F8F9FD] border border-[#E8EBF3] rounded-2xl mb-4 min-w-0">
+              <LinkIcon className="w-4 h-4 text-[#5865E9] shrink-0 ml-1" />
+              <input 
+                type="text" 
+                readOnly 
+                value={linkData.url}
+                className="bg-transparent text-xs text-[#151B2D] font-medium flex-1 outline-none truncate min-w-0"
+              />
+              <button
+                onClick={handleCopy}
+                title="Copy Link"
+                className="p-2 rounded-xl bg-white hover:bg-[#EEF1FF] border border-[#E8EBF3] text-[#788395] hover:text-[#5865E9] transition shrink-0"
+              >
+                {copied ? <CheckCircle className="w-4 h-4 text-[#16A05A]" /> : <Copy className="w-4 h-4" />}
+              </button>
+              <button
+                onClick={() => setShowQr(!showQr)}
+                title="Show QR Code"
+                className="p-2 sm:px-3 sm:py-2 rounded-xl bg-[#5865E9] hover:bg-[#4c57d8] text-white transition shrink-0 flex items-center gap-1 text-xs font-semibold shadow-titan-sm"
+              >
+                <QrCode className="w-4 h-4" />
+                <span className="hidden sm:inline">QR</span>
+              </button>
+            </div>
+
+            {/* QR Code expansion */}
+            {showQr && (
+              <div className="p-4 bg-[#F8F9FD] rounded-2xl border border-[#E8EBF3] inline-block mb-4 animate-fadeIn max-w-full overflow-hidden">
+                <img src={linkData.qrCode} alt="Download QR Code" className="w-36 sm:w-44 h-36 sm:h-44 max-w-full rounded-xl bg-white p-2 mx-auto object-contain shadow-sm border border-[#E8EBF3]" />
+                <p className="text-[11px] text-[#788395] mt-2">Scan with camera to download on any device</p>
+              </div>
+            )}
+
+            {/* Real-time Receiver Download Status Card */}
+            <div className="mb-4 p-4 bg-[#F8F9FD] rounded-2xl border border-[#E8EBF3] text-left">
+              <div className="flex items-center justify-between mb-2">
+                <span className="text-xs font-bold text-[#151B2D] flex items-center gap-1.5">
+                  <ArrowDownCircle className="w-4 h-4 text-[#5865E9]" />
+                  <span>Receiver Download Status</span>
+                </span>
+                {liveDownload?.status === 'downloading' && (
+                  <span className="text-xs font-bold text-[#5865E9] animate-pulse">{liveDownload.percent}%</span>
+                )}
+                {liveDownload?.status === 'completed' && (
+                  <span className="text-xs font-bold text-[#16A05A] flex items-center gap-1">
+                    <CheckCircle2 className="w-3.5 h-3.5" />
+                    <span>Completed</span>
+                  </span>
+                )}
+                {liveDownload?.status === 'accessed' && (
+                  <span className="text-[11px] font-bold text-[#8755E8] flex items-center gap-1 bg-[#F4EFFF] px-2.5 py-0.5 rounded-full border border-[#e8dcfc]">
+                    <Eye className="w-3.5 h-3.5" />
+                    <span>Link Opened</span>
+                  </span>
+                )}
+                {(!liveDownload || liveDownload.status === 'waiting') && (
+                  <span className="text-[11px] text-amber-600 font-semibold bg-amber-50 px-2.5 py-0.5 rounded-full border border-amber-200">
+                    Waiting for receiver...
+                  </span>
+                )}
+              </div>
+
+              {liveDownload?.status === 'downloading' && (
+                <div>
+                  <div className="w-full bg-[#EEF1FF] h-2 rounded-full overflow-hidden mb-1.5">
+                    <div 
+                      className="bg-[#5865E9] h-full transition-all duration-300 rounded-full"
+                      style={{ width: `${liveDownload.percent}%` }}
+                    />
+                  </div>
+                  <div className="flex justify-between text-[11px] text-[#788395] font-medium">
+                    <span>Downloading to receiver device...</span>
+                    <span>{formatBytes(liveDownload.bytesSent)} / {formatBytes(liveDownload.totalBytes)}</span>
+                  </div>
+                </div>
+              )}
+
+              {liveDownload?.status === 'completed' && (
+                <p className="text-xs text-[#16A05A] font-semibold mt-1">
+                  Recipient has downloaded this file successfully!
+                </p>
+              )}
+
+              {liveDownload?.status === 'accessed' && (
+                <p className="text-xs text-[#8755E8] font-semibold mt-1">
+                  Recipient has opened and verified this link! Ready to transfer.
+                </p>
+              )}
+
+              {(!liveDownload || liveDownload.status === 'waiting') && (
+                <p className="text-[11px] text-[#788395]">
+                  When recipient clicks your link or scans the QR, live progress will display here in real time.
+                </p>
+              )}
+            </div>
+
+            <div className="flex items-center justify-center gap-2 text-xs text-[#788395] mb-4">
+              <Clock className="w-3.5 h-3.5 text-[#5865E9]" />
+              <span>Expires in 3 hours automatically</span>
+            </div>
+
+            <button
+              onClick={onClose}
+              className="w-full py-3.5 bg-[#EEF1FF] hover:bg-[#5865E9] text-[#5865E9] hover:text-white font-semibold text-sm rounded-2xl transition"
+            >
+              Done
+            </button>
+          </div>
+        )}
+
+      </div>
+    </div>
+  );
+}

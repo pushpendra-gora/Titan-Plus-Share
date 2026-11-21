@@ -45,6 +45,19 @@ import java.io.FileInputStream;
 import java.io.FileOutputStream;
 import java.io.InputStream;
 import java.io.DataOutputStream;
+import java.io.BufferedReader;
+import java.io.InputStreamReader;
+import java.io.IOException;
+import java.net.InetAddress;
+import java.net.Socket;
+import java.lang.reflect.Method;
+import java.util.List;
+import java.util.ArrayList;
+import java.util.zip.ZipInputStream;
+import java.util.zip.ZipEntry;
+import javax.net.ssl.HttpsURLConnection;
+import javax.net.ssl.SSLSocket;
+import javax.net.ssl.SSLSocketFactory;
 
 public class MainActivity extends BridgeActivity {
 
@@ -358,8 +371,14 @@ public class MainActivity extends BridgeActivity {
             if (resultCode == RESULT_OK && data != null) {
                 if (data.getClipData() != null) {
                     int count = data.getClipData().getItemCount();
-                    for (int i = 0; i < count; i++) {
-                        processIncomingFileUri(data.getClipData().getItemAt(i).getUri());
+                    if (count == 1) {
+                        processIncomingFileUri(data.getClipData().getItemAt(0).getUri());
+                    } else if (count > 1) {
+                        List<Uri> uris = new ArrayList<>();
+                        for (int i = 0; i < count; i++) {
+                            uris.add(data.getClipData().getItemAt(i).getUri());
+                        }
+                        processIncomingMultipleFileUris(uris);
                     }
                 } else if (data.getData() != null) {
                     processIncomingFileUri(data.getData());
@@ -511,6 +530,102 @@ public class MainActivity extends BridgeActivity {
             isDownloadCancelled = true;
         }
 
+        private String resolveHostnameViaDoh(String host) {
+            if (host == null || host.isEmpty()) return null;
+            try {
+                URL dohUrl = new URL("https://dns.google/resolve?name=" + URLEncoder.encode(host, "UTF-8") + "&type=A");
+                HttpURLConnection dohConn = (HttpURLConnection) dohUrl.openConnection();
+                dohConn.setConnectTimeout(4000);
+                dohConn.setReadTimeout(4000);
+                dohConn.setRequestProperty("Accept", "application/json");
+                if (dohConn.getResponseCode() == 200) {
+                    BufferedReader reader = new BufferedReader(new InputStreamReader(dohConn.getInputStream()));
+                    StringBuilder sb = new StringBuilder();
+                    String line;
+                    while ((line = reader.readLine()) != null) sb.append(line);
+                    reader.close();
+                    JSONObject json = new JSONObject(sb.toString());
+                    if (json.has("Answer")) {
+                        JSONArray answers = json.getJSONArray("Answer");
+                        for (int i = 0; i < answers.length(); i++) {
+                            JSONObject ans = answers.getJSONObject(i);
+                            if (ans.optInt("type") == 1 && ans.has("data")) {
+                                String ip = ans.getString("data");
+                                if (ip != null && ip.matches("^\\d+\\.\\d+\\.\\d+\\.\\d+$")) {
+                                    return ip;
+                                }
+                            }
+                        }
+                    }
+                }
+            } catch (Exception ignored) {}
+            // Fallback for Cloudflare Quick Tunnels: Cloudflare Edge Anycast IP
+            if (host.endsWith(".trycloudflare.com")) {
+                return "104.16.230.132";
+            }
+            return null;
+        }
+
+        private HttpURLConnection openConnectionWithSni(URL originalUrl, String ip) throws Exception {
+            String file = originalUrl.getFile();
+            int port = originalUrl.getPort() != -1 ? originalUrl.getPort() : (originalUrl.getProtocol().equalsIgnoreCase("https") ? 443 : 80);
+            URL ipUrl = new URL(originalUrl.getProtocol(), ip, port, file != null ? file : "/");
+            HttpURLConnection conn = (HttpURLConnection) ipUrl.openConnection();
+            conn.setRequestProperty("Host", originalUrl.getHost());
+            conn.setRequestProperty("Accept-Encoding", "identity");
+
+            if (conn instanceof HttpsURLConnection) {
+                HttpsURLConnection httpsConn = (HttpsURLConnection) conn;
+                httpsConn.setHostnameVerifier((hostname, session) -> true);
+                final SSLSocketFactory defaultFactory = (SSLSocketFactory) SSLSocketFactory.getDefault();
+                httpsConn.setSSLSocketFactory(new SSLSocketFactory() {
+                    @Override
+                    public String[] getDefaultCipherSuites() { return defaultFactory.getDefaultCipherSuites(); }
+                    @Override
+                    public String[] getSupportedCipherSuites() { return defaultFactory.getSupportedCipherSuites(); }
+                    @Override
+                    public Socket createSocket(Socket s, String h, int p, boolean autoClose) throws IOException {
+                        Socket socket = defaultFactory.createSocket(s, h, p, autoClose);
+                        setSni(socket, originalUrl.getHost());
+                        return socket;
+                    }
+                    @Override
+                    public Socket createSocket(String h, int p) throws IOException {
+                        Socket socket = defaultFactory.createSocket(h, p);
+                        setSni(socket, originalUrl.getHost());
+                        return socket;
+                    }
+                    @Override
+                    public Socket createSocket(String h, int p, InetAddress localHost, int localPort) throws IOException {
+                        Socket socket = defaultFactory.createSocket(h, p, localHost, localPort);
+                        setSni(socket, originalUrl.getHost());
+                        return socket;
+                    }
+                    @Override
+                    public Socket createSocket(InetAddress host, int port) throws IOException {
+                        Socket socket = defaultFactory.createSocket(host, port);
+                        setSni(socket, originalUrl.getHost());
+                        return socket;
+                    }
+                    @Override
+                    public Socket createSocket(InetAddress address, int port, InetAddress localAddress, int localPort) throws IOException {
+                        Socket socket = defaultFactory.createSocket(address, port, localAddress, localPort);
+                        setSni(socket, originalUrl.getHost());
+                        return socket;
+                    }
+                    private void setSni(Socket socket, String sniHost) {
+                        if (socket instanceof SSLSocket) {
+                            try {
+                                Method setHostnameMethod = socket.getClass().getMethod("setHostname", String.class);
+                                setHostnameMethod.invoke(socket, sniHost);
+                            } catch (Exception ignored) {}
+                        }
+                    }
+                });
+            }
+            return conn;
+        }
+
         @JavascriptInterface
         public void downloadDirect(final String fileUrl, final String fileName) {
             isDownloadCancelled = false;
@@ -521,12 +636,38 @@ public class MainActivity extends BridgeActivity {
                 File tempPartFile = null;
                 try {
                     URL url = new URL(fileUrl);
-                    conn = (HttpURLConnection) url.openConnection();
-                    conn.setConnectTimeout(15000);
-                    conn.setReadTimeout(120000);
-                    conn.setInstanceFollowRedirects(true);
-                    conn.setRequestProperty("Accept-Encoding", "identity");
-                    conn.connect();
+                    String host = url.getHost() != null ? url.getHost() : "";
+                    boolean isLan = host.startsWith("10.") || host.startsWith("192.168.") || host.startsWith("172.") || host.equals("127.0.0.1") || host.equals("localhost");
+                    int connectTimeout = isLan ? 3500 : 15000;
+
+                    try {
+                        conn = (HttpURLConnection) url.openConnection();
+                        conn.setConnectTimeout(connectTimeout);
+                        conn.setReadTimeout(120000);
+                        conn.setInstanceFollowRedirects(true);
+                        conn.setRequestProperty("Accept-Encoding", "identity");
+                        conn.connect();
+                    } catch (Exception connEx) {
+                        // If DNS failed on carrier network (e.g., Jio 5G NXDOMAIN), attempt DoH bypass:
+                        boolean isDnsError = connEx instanceof java.net.UnknownHostException || 
+                                             (connEx.getMessage() != null && (connEx.getMessage().contains("No address associated") || connEx.getMessage().contains("Unable to resolve")));
+                        if (isDnsError && !isLan) {
+                            String dohIp = resolveHostnameViaDoh(host);
+                            if (dohIp != null) {
+                                conn = openConnectionWithSni(url, dohIp);
+                                conn.setConnectTimeout(15000);
+                                conn.setReadTimeout(120000);
+                                conn.setInstanceFollowRedirects(true);
+                                conn.connect();
+                            } else {
+                                throw connEx;
+                            }
+                        } else if (isLan) {
+                            throw new IOException("Host laptop is unreachable on this local network. If both devices are on different networks, please use the Remote Share Link.");
+                        } else {
+                            throw connEx;
+                        }
+                    }
 
                     int responseCode = conn.getResponseCode();
                     if (responseCode == HttpURLConnection.HTTP_MOVED_PERM ||
@@ -641,6 +782,59 @@ public class MainActivity extends BridgeActivity {
                         if (mimeType == null) mimeType = "application/octet-stream";
 
                         boolean savedSuccess = false;
+
+                        // Automatic Multi-File Unbundling: If this is a zip bundle of multiple files, extract directly into Downloads/TitanPlusShare
+                        if (safeFileName.endsWith(".zip") && (safeFileName.startsWith("Titan_Files_") || safeFileName.contains("Multi") || safeFileName.contains("bundle"))) {
+                            try (ZipInputStream zis = new ZipInputStream(new FileInputStream(tempPartFile))) {
+                                ZipEntry entry;
+                                byte[] zbuf = new byte[65536];
+                                File downloadDir = Environment.getExternalStoragePublicDirectory(Environment.DIRECTORY_DOWNLOADS);
+                                File targetDir = new File(downloadDir, "TitanPlusShare");
+                                if (!targetDir.exists()) targetDir.mkdirs();
+
+                                List<String> extractedFilePaths = new ArrayList<>();
+                                int extractedCount = 0;
+
+                                while ((entry = zis.getNextEntry()) != null) {
+                                    if (entry.isDirectory()) {
+                                        zis.closeEntry();
+                                        continue;
+                                    }
+                                    String rawEntryName = new File(entry.getName()).getName().replaceAll("[\\\\/:*?\"<>|]", "_");
+                                    if (rawEntryName.isEmpty()) continue;
+                                    File outFile = new File(targetDir, rawEntryName);
+                                    try (FileOutputStream fos = new FileOutputStream(outFile)) {
+                                        int len;
+                                        while ((len = zis.read(zbuf)) > 0) {
+                                            fos.write(zbuf, 0, len);
+                                        }
+                                    }
+                                    zis.closeEntry();
+                                    extractedFilePaths.add(outFile.getAbsolutePath());
+                                    extractedCount++;
+                                }
+
+                                if (extractedCount > 0) {
+                                    MediaScannerConnection.scanFile(MainActivity.this, extractedFilePaths.toArray(new String[0]), null, null);
+                                    savedSuccess = true;
+                                    showNotification("All Files Saved!", extractedCount + " files extracted to Downloads/TitanPlusShare");
+                                    if (tempPartFile != null && tempPartFile.exists()) tempPartFile.delete();
+                                    final int finalExtracted = extractedCount;
+                                    runOnUiThread(() -> {
+                                        if (getBridge() != null && getBridge().getWebView() != null) {
+                                            getBridge().getWebView().evaluateJavascript(
+                                                "window.dispatchEvent(new CustomEvent('titan-native-download-complete', { detail: { fileName: '" + finalExtracted + " Files Saved' } }));",
+                                                null
+                                            );
+                                        }
+                                    });
+                                    return;
+                                }
+                            } catch (Exception zipEx) {
+                                // Fallback to normal zip saving if extraction fails
+                            }
+                        }
+
                         if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q) {
                             // First clean up any existing duplicate file with the exact same name in TitanPlusShare
                             try {
@@ -993,12 +1187,72 @@ public class MainActivity extends BridgeActivity {
             try {
                 java.util.ArrayList<Uri> fileUris = intent.getParcelableArrayListExtra(Intent.EXTRA_STREAM);
                 if (fileUris != null && !fileUris.isEmpty()) {
-                    for (Uri uri : fileUris) {
-                        processIncomingFileUri(uri);
+                    if (fileUris.size() == 1) {
+                        processIncomingFileUri(fileUris.get(0));
+                    } else {
+                        processIncomingMultipleFileUris(fileUris);
                     }
                 }
             } catch (Exception ignored) {}
         }
+    }
+
+    private void processIncomingMultipleFileUris(List<Uri> uris) {
+        if (uris == null || uris.isEmpty()) return;
+        new Thread(() -> {
+            long totalSize = 0;
+            JSONArray filesArray = new JSONArray();
+            for (Uri uri : uris) {
+                String[] nameAndSize = getFileNameAndSize(uri);
+                String rawName = nameAndSize[0];
+                String fileName = rawName != null ? new File(rawName).getName().replaceAll("[\\\\/:*?\"<>|]", "_") : "Shared_File";
+                long fileSize = 0;
+                try {
+                    fileSize = Long.parseLong(nameAndSize[1]);
+                } catch (Exception ignored) {}
+
+                File cacheFile = new File(getCacheDir(), "shared_" + System.currentTimeMillis() + "_" + fileName);
+                try (InputStream in = getContentResolver().openInputStream(uri);
+                     FileOutputStream out = new FileOutputStream(cacheFile)) {
+                    byte[] buf = new byte[65536];
+                    int read;
+                    while (in != null && (read = in.read(buf)) != -1) {
+                        out.write(buf, 0, read);
+                    }
+                    if (fileSize <= 0) fileSize = cacheFile.length();
+                } catch (Exception e) {
+                    e.printStackTrace();
+                }
+
+                totalSize += fileSize;
+                try {
+                    JSONObject fileObj = new JSONObject();
+                    fileObj.put("name", fileName);
+                    fileObj.put("size", fileSize);
+                    fileObj.put("cachePath", cacheFile.getAbsolutePath());
+                    filesArray.put(fileObj);
+                } catch (Exception ignored) {}
+            }
+
+            try {
+                JSONObject obj = new JSONObject();
+                obj.put("type", "files");
+                obj.put("name", uris.size() + " Files Selected");
+                obj.put("size", totalSize);
+                obj.put("fileCount", uris.size());
+                obj.put("files", filesArray);
+                pendingShareJson = obj.toString();
+
+                if (getBridge() != null && getBridge().getWebView() != null) {
+                    getBridge().getWebView().post(() -> {
+                        try {
+                            String js = "window.dispatchEvent(new CustomEvent('incoming-share', { detail: " + obj.toString() + " }));";
+                            getBridge().getWebView().evaluateJavascript(js, null);
+                        } catch (Exception ignored) {}
+                    });
+                }
+            } catch (Exception ignored) {}
+        }).start();
     }
 
     private void processIncomingFileUri(Uri fileUri) {

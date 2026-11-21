@@ -1,0 +1,10 @@
+{
+  "appId": "com.titanplus.share",
+  "appName": "Titan Plus Share",
+  "webDir": "dist",
+  "server": {
+    "androidScheme": "http",
+    "cleartext": true,
+    "allowNavigation": ["*"]
+  }
+}

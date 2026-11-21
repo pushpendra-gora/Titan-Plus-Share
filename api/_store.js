@@ -1,7 +1,24 @@
-// Lightweight in-memory store + self-contained token fallback + /tmp persistence for Vercel Serverless
+// Lightweight persistent store + self-contained token fallback + /tmp persistence for Vercel Serverless
 const fs = require('fs');
 const linksStore = new Map();
 const ACKS_FILE = '/tmp/titan_acks.json';
+const LINKS_CACHE_FILE = '/tmp/titan_links_cache.json';
+
+function readDiskLinks() {
+  try {
+    if (fs.existsSync(LINKS_CACHE_FILE)) {
+      const data = JSON.parse(fs.readFileSync(LINKS_CACHE_FILE, 'utf8'));
+      if (data && typeof data === 'object') return data;
+    }
+  } catch (e) {}
+  return {};
+}
+
+function writeDiskLinks(mapObj) {
+  try {
+    fs.writeFileSync(LINKS_CACHE_FILE, JSON.stringify(mapObj));
+  } catch (e) {}
+}
 
 function readAcks() {
   try {
@@ -125,6 +142,13 @@ module.exports = {
     if (data.selfToken && data.selfToken !== token) {
       linksStore.set(data.selfToken, data);
     }
+
+    // Persist to /tmp across serverless warm containers
+    const disk = readDiskLinks();
+    disk[token] = data;
+    if (data.token) disk[data.token] = data;
+    if (data.selfToken) disk[data.selfToken] = data;
+    writeDiskLinks(disk);
   },
   getLink(token) {
     cleanExpired();
@@ -134,28 +158,36 @@ module.exports = {
     if (clean.includes('/download/')) clean = clean.split('/download/')[1].split('/')[0].split('?')[0];
     if (clean.includes('/')) clean = clean.split('/').pop().split('?')[0];
 
-    if (linksStore.has(clean)) {
-      const l = linksStore.get(clean);
-      const count = getAckCount(clean);
-      if (count > (l.downloadCount || 0)) {
-        l.downloadCount = count;
-        l.status = 'downloaded';
-      }
-      return l;
-    }
+    const disk = readDiskLinks();
+
+    let live = linksStore.get(clean) || disk[clean];
 
     // Attempt self-contained token decoding
     const decoded = decodeSelfContained(clean);
-    if (decoded && decoded.token && linksStore.has(decoded.token)) {
-      const live = linksStore.get(decoded.token);
-      return {
-        ...decoded,
-        publicUrl: live.publicUrl || decoded.publicUrl,
-        directUrl: live.directUrl || decoded.directUrl,
-        downloadCount: Math.max(decoded.downloadCount, live.downloadCount || 0),
-        status: (live.downloadCount > 0 || decoded.downloadCount > 0) ? 'downloaded' : (live.status || decoded.status)
-      };
+    if (decoded && decoded.token) {
+      const match = linksStore.get(decoded.token) || disk[decoded.token];
+      if (match) {
+        live = match;
+      }
     }
+
+    if (live) {
+      const count = getAckCount(clean) || getAckCount(live.token);
+      if (count > (live.downloadCount || 0)) {
+        live.downloadCount = count;
+        live.status = 'downloaded';
+      }
+      if (decoded) {
+        return {
+          ...decoded,
+          ...live,
+          publicUrl: live.publicUrl || decoded.publicUrl,
+          directUrl: live.directUrl || decoded.directUrl
+        };
+      }
+      return live;
+    }
+
     return decoded;
   },
   getAll() {

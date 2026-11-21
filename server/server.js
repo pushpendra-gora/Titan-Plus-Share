@@ -504,7 +504,7 @@ function startTunnel() {
 function checkTunnelHealth() {
   if (!publicTunnelUrl || isRestartingTunnel) return;
   const controller = new AbortController();
-  const timeoutId = setTimeout(() => controller.abort(), 4500);
+  const timeoutId = setTimeout(() => controller.abort(), 10000);
 
   fetch(`${publicTunnelUrl}/api/status`, { signal: controller.signal })
     .then(async (res) => {
@@ -518,21 +518,22 @@ function checkTunnelHealth() {
     .catch((err) => {
       clearTimeout(timeoutId);
       tunnelHealthFailures++;
-      console.warn(`Cloudflare tunnel health probe #${tunnelHealthFailures} failed: ${err.message}`);
-      if (tunnelHealthFailures >= 2) {
-        console.warn('Public tunnel unresponsive or DNS expired. Automatically restarting Cloudflare tunnel...');
+      console.warn(`Cloudflare tunnel probe #${tunnelHealthFailures} notice: ${err.message}`);
+      // Only restart if consistently unresponsive over 5 consecutive probes (>2.5 mins)
+      if (tunnelHealthFailures >= 5) {
+        console.warn('Public tunnel persistently unresponsive. Refreshing tunnel connection...');
         tunnelHealthFailures = 0;
         isRestartingTunnel = true;
         stopTunnel();
         setTimeout(() => {
           isRestartingTunnel = false;
           startTunnel();
-        }, 1500);
+        }, 2000);
       }
     });
 }
 
-setInterval(checkTunnelHealth, 20000);
+setInterval(checkTunnelHealth, 30000);
 
 function updateLinksWithTunnel(tunnelUrl) {
   if (!tunnelUrl) return;
@@ -551,12 +552,15 @@ function updateLinksWithTunnel(tunnelUrl) {
   }
 }
 
-async function ensureTunnelReady(maxWaitMs = 5000) {
+async function ensureTunnelReady(maxWaitMs = 12000) {
   if (publicTunnelUrl) return publicTunnelUrl;
+  if (!tunnelProcess) {
+    startTunnel();
+  }
   const start = Date.now();
   while (Date.now() - start < maxWaitMs) {
     if (publicTunnelUrl) return publicTunnelUrl;
-    await new Promise((r) => setTimeout(r, 200));
+    await new Promise((r) => setTimeout(r, 250));
   }
   return publicTunnelUrl;
 }
@@ -661,8 +665,8 @@ app.post('/api/links/create', upload.single('file'), async (req, res) => {
       return res.status(400).json({ error: 'No content provided' });
     }
 
-    // Wait up to 5 seconds for tunnel so remote link works across cellular/external networks immediately
-    await ensureTunnelReady(5000);
+    // Wait up to 12 seconds for tunnel so remote link works across cellular/external networks immediately
+    await ensureTunnelReady(12000);
     linkEntry.publicUrl = publicTunnelUrl ? `${publicTunnelUrl}/api/links/download/${token}` : '';
 
     const primaryIp = getLocalIpAddresses()[0];
@@ -753,7 +757,7 @@ app.post('/api/links/create-folder', upload.array('files'), async (req, res) => 
       downloadCount: 0
     };
 
-    await ensureTunnelReady(5000);
+    await ensureTunnelReady(12000);
     linkEntry.publicUrl = publicTunnelUrl ? `${publicTunnelUrl}/api/links/download/${token}` : '';
 
     const primaryIp = getLocalIpAddresses()[0];

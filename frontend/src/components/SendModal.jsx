@@ -232,8 +232,24 @@ export default function SendModal({ item, onClose, onStartTransfer }) {
     setLoading(true);
     try {
       let res;
-      if (item.type === 'folder' && item.files) {
-        res = await generateFolderShareLink(item.files, item.name);
+      if ((item.type === 'folder' || item.type === 'files') && item.files) {
+        let filesList = [];
+        if (Array.isArray(item.files)) {
+          for (let f of item.files) {
+            if (f instanceof File) {
+              filesList.push(f);
+            } else if (f && f.cachePath) {
+              try {
+                const resBlob = await fetch(Capacitor.convertFileSrc(f.cachePath));
+                const blob = await resBlob.blob();
+                filesList.push(new File([blob], f.name || 'file', { type: blob.type || 'application/octet-stream' }));
+              } catch (e) {}
+            }
+          }
+        } else {
+          filesList = Array.from(item.files);
+        }
+        res = await generateFolderShareLink(filesList, item.name || 'Shared_Files');
       } else if (item.type === 'text') {
         res = await generateShareLink(null, 'text', item.text);
       } else {
@@ -341,6 +357,7 @@ export default function SendModal({ item, onClose, onStartTransfer }) {
   };
 
   const getItemBadge = () => {
+    if (item.type === 'files') return `${item.fileCount || (item.files ? item.files.length : '')}F`;
     if (item.type === 'folder') return 'DIR';
     if (item.type === 'text') return 'TXT';
     if (item.type === 'media') return 'IMG';
@@ -361,7 +378,7 @@ export default function SendModal({ item, onClose, onStartTransfer }) {
             <div className="min-w-0">
               <h4 className="font-bold text-[#151B2D] text-sm truncate">{item.name}</h4>
               <p className="text-xs text-[#788395] font-medium">
-                {item.type === 'folder' 
+                {item.type === 'folder' || item.type === 'files'
                   ? `${item.fileCount || (item.files ? item.files.length : 1)} files • ${formatBytes(item.size)}`
                   : formatBytes(item.size)}
               </p>

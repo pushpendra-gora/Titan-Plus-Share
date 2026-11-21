@@ -1,0 +1,392 @@
+import React, { useState, useEffect, useRef } from 'react';
+import { Download, CheckCircle2, FileText, ArrowDownLeft, X, FolderCheck, Copy, Check, AlignLeft } from 'lucide-react';
+import { formatBytes, getServerUrl } from '../api';
+import confetti from 'canvas-confetti';
+import { playNotificationSound } from '../utils/audio';
+
+export default function IncomingTransferModal({ incoming, onClose }) {
+  const [downloading, setDownloading] = useState(false);
+  const [progress, setProgress] = useState(0);
+  const [transferredBytes, setTransferredBytes] = useState(0);
+  const [speed, setSpeed] = useState('');
+  const [completed, setCompleted] = useState(incoming.isCompleted || incoming.transferType === 'text');
+  const [copied, setCopied] = useState(false);
+  const xhrRef = useRef(null);
+  
+  const isText = incoming.transferType === 'text' || !!incoming.textContent;
+
+  const getServerHost = () => {
+    if (incoming.serverUrl) return incoming.serverUrl;
+    if (incoming.downloadUrl) {
+      try {
+        const u = new URL(incoming.downloadUrl);
+        return u.origin;
+      } catch (e) {}
+    }
+    return getServerUrl();
+  };
+
+  const savePath = localStorage.getItem('titan_save_path') || 
+    (/Android|iPhone|iPad/i.test(navigator.userAgent) 
+      ? '/storage/emulated/0/Download/TitanPlusShare' 
+      : 'C:\\Users\\Public\\Downloads\\TitanPlusShare');
+
+  useEffect(() => {
+    // Remember Laptop server host if received from laptop
+    const host = getServerHost();
+    if (host && !host.includes('127.0.0.1') && !host.includes('localhost')) {
+      localStorage.setItem('titan_server_url', host);
+    }
+
+    // 1. Play offline audio chime
+    playNotificationSound();
+
+    // 2. Trigger native Android top status bar notification if in background or foreground
+    if (window.TitanNativeBridge && typeof window.TitanNativeBridge.showNotification === 'function') {
+      const title = isText ? 'Incoming Text Note' : 'Incoming File Transfer';
+      const msg = isText 
+        ? `From ${incoming.senderName || 'Device'}: "${(incoming.textContent || '').substring(0, 40)}..."` 
+        : `From ${incoming.senderName || 'Device'}: ${incoming.fileName} (${formatBytes(incoming.fileSize)})`;
+      window.TitanNativeBridge.showNotification(title, msg);
+    }
+
+    // 3. If it's a text message, complete immediately & send ACK to Laptop
+    if (isText) {
+      setCompleted(true);
+      confetti({ particleCount: 40, spread: 50, origin: { y: 0.6 } });
+      if (incoming.transferId) {
+        fetch(`${host}/api/transfer/ack`, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ transferId: incoming.transferId, success: true })
+        }).catch(() => {});
+      }
+      return;
+    }
+
+    // 4. If laptop already received file directly via server, mark completed
+    if (incoming.filePath || incoming.isCompleted) {
+      setCompleted(true);
+      confetti({ particleCount: 50, spread: 60, origin: { y: 0.6 } });
+      return;
+    }
+
+    // 5. If mobile receiving a file push with downloadUrl: auto start pull
+    if (incoming.downloadUrl) {
+      startPull(incoming.downloadUrl, incoming.fileName);
+    }
+  }, [incoming]);
+
+  const startPull = (downloadUrl, fileName) => {
+    let activeDownloadUrl = downloadUrl;
+    try {
+      const parsed = new URL(downloadUrl);
+      if (parsed.hostname === '127.0.0.1' || parsed.hostname === 'localhost') {
+        const srv = getServerHost();
+        if (srv && !srv.includes('127.0.0.1') && !srv.includes('localhost')) {
+          const srvUrl = new URL(srv);
+          parsed.hostname = srvUrl.hostname;
+          if (srvUrl.port) parsed.port = srvUrl.port;
+          activeDownloadUrl = parsed.toString();
+        }
+      }
+    } catch (e) {}
+
+    setDownloading(true);
+    setProgress(0);
+    setTransferredBytes(0);
+
+    const transferKey = incoming.transferId || incoming.fileName;
+    window.dispatchEvent(new CustomEvent('titan-active-transfer', {
+      detail: {
+        id: transferKey,
+        name: incoming.fileName,
+        size: incoming.fileSize,
+        target: incoming.senderName || 'Sender',
+        type: 'receiving',
+        progress: 0,
+        speed: '0 MB/s',
+        status: 'active'
+      }
+    }));
+
+    // Prefer high-performance Android direct native download
+    if (window.TitanNativeBridge && typeof window.TitanNativeBridge.downloadDirect === 'function') {
+      const handleNativeProg = (e) => {
+        if (e.detail?.percent !== undefined) {
+          setProgress(e.detail.percent);
+          if (e.detail.loaded) setTransferredBytes(e.detail.loaded);
+          if (e.detail.speed) setSpeed(e.detail.speed);
+
+          // Real-time progress reporting back to laptop server
+          if (incoming.transferId) {
+            fetch(`${getServerHost()}/api/transfer/progress`, {
+              method: 'POST',
+              headers: { 'Content-Type': 'application/json' },
+              body: JSON.stringify({
+                transferId: incoming.transferId,
+                percent: e.detail.percent,
+                loaded: e.detail.loaded,
+                total: e.detail.total,
+                speed: e.detail.speed
+              })
+            }).catch(() => {});
+          }
+
+          window.dispatchEvent(new CustomEvent('titan-active-transfer-progress', {
+            detail: { id: transferKey, progress: e.detail.percent, speed: e.detail.speed, loaded: e.detail.loaded }
+          }));
+        }
+      };
+
+      const handleNativeDone = () => {
+        setProgress(100);
+        setCompleted(true);
+        setDownloading(false);
+        confetti({ particleCount: 60, spread: 60, origin: { y: 0.6 } });
+        window.removeEventListener('titan-native-download-progress', handleNativeProg);
+        window.removeEventListener('titan-native-download-complete', handleNativeDone);
+        window.removeEventListener('titan-native-download-error', handleNativeErr);
+
+        window.dispatchEvent(new CustomEvent('titan-active-transfer-complete', {
+          detail: { id: transferKey }
+        }));
+
+        // Send ACK back to server
+        if (incoming.transferId) {
+          fetch(`${getServerHost()}/api/transfer/ack`, {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ transferId: incoming.transferId, success: true })
+          }).catch(() => {});
+        }
+      };
+
+      const handleNativeErr = (e) => {
+        setDownloading(false);
+        window.removeEventListener('titan-native-download-progress', handleNativeProg);
+        window.removeEventListener('titan-native-download-complete', handleNativeDone);
+        window.removeEventListener('titan-native-download-error', handleNativeErr);
+        window.dispatchEvent(new CustomEvent('titan-active-transfer-cancel', {
+          detail: { id: transferKey }
+        }));
+      };
+
+      window.addEventListener('titan-native-download-progress', handleNativeProg);
+      window.addEventListener('titan-native-download-complete', handleNativeDone);
+      window.addEventListener('titan-native-download-error', handleNativeErr);
+
+      window.TitanNativeBridge.downloadDirect(activeDownloadUrl, fileName);
+      return;
+    }
+
+    const xhr = new XMLHttpRequest();
+    xhrRef.current = xhr;
+    xhr.open('GET', activeDownloadUrl, true);
+    xhr.responseType = 'blob';
+
+    xhr.onprogress = (e) => {
+      if (e.lengthComputable) {
+        const pct = Math.round((e.loaded / e.total) * 100);
+        setProgress(pct);
+        setTransferredBytes(e.loaded);
+        window.dispatchEvent(new CustomEvent('titan-active-transfer-progress', {
+          detail: { id: transferKey, progress: pct, loaded: e.loaded }
+        }));
+      }
+    };
+
+    xhr.onload = () => {
+      if (xhr.status >= 200 && xhr.status < 300) {
+        setProgress(100);
+        setCompleted(true);
+        setDownloading(false);
+        confetti({ particleCount: 60, spread: 60, origin: { y: 0.6 } });
+
+        window.dispatchEvent(new CustomEvent('titan-active-transfer-complete', {
+          detail: { id: transferKey }
+        }));
+
+        const blob = xhr.response;
+
+        // Native Android saving via TitanNativeBridge (saves to Downloads/TitanPlusShare)
+        if (window.TitanNativeBridge && typeof window.TitanNativeBridge.saveBase64ToDownloads === 'function') {
+          const reader = new FileReader();
+          reader.onloadend = () => {
+            const base64data = reader.result.split(',')[1];
+            window.TitanNativeBridge.saveBase64ToDownloads(base64data, fileName);
+          };
+          reader.readAsDataURL(blob);
+        } else {
+          // Web / Desktop fallback
+          const link = document.createElement('a');
+          link.href = window.URL.createObjectURL(blob);
+          link.download = fileName;
+          document.body.appendChild(link);
+          link.click();
+          document.body.removeChild(link);
+        }
+
+        // Send ACK back to server
+        if (incoming.transferId) {
+          fetch(`${getServerHost()}/api/transfer/ack`, {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ transferId: incoming.transferId, success: true })
+          }).catch(() => {});
+        }
+      } else {
+        setDownloading(false);
+      }
+    };
+
+    xhr.onerror = () => {
+      setDownloading(false);
+      window.dispatchEvent(new CustomEvent('titan-active-transfer-cancel', {
+        detail: { id: transferKey }
+      }));
+    };
+
+    xhr.send();
+  };
+
+  const handleCancel = () => {
+    if (window.TitanNativeBridge && typeof window.TitanNativeBridge.cancelActiveDownload === 'function') {
+      window.TitanNativeBridge.cancelActiveDownload();
+    }
+    if (xhrRef.current) {
+      try { xhrRef.current.abort(); } catch (e) {}
+    }
+    window.dispatchEvent(new CustomEvent('titan-active-transfer-cancel', {
+      detail: { id: incoming.transferId || incoming.fileName }
+    }));
+    onClose();
+  };
+
+  const handleCopyText = () => {
+    if (incoming.textContent) {
+      navigator.clipboard.writeText(incoming.textContent);
+      setCopied(true);
+      setTimeout(() => setCopied(false), 2000);
+    }
+  };
+
+  return (
+    <div className="fixed inset-0 z-50 flex items-center justify-center p-3 sm:p-4 bg-[#151B2D]/40 backdrop-blur-sm animate-fadeIn">
+      <div className="w-full max-w-sm sm:max-w-md bg-white rounded-[32px] p-5 sm:p-7 shadow-titan-modal border border-[#E8EBF3] text-center relative overflow-hidden">
+        
+        {/* Top Notification Badge */}
+        <div className="inline-flex items-center gap-1.5 px-3.5 py-1 bg-[#EEF1FF] text-[#5865E9] text-xs font-bold rounded-full mb-4">
+          <ArrowDownLeft className="w-3.5 h-3.5" />
+          <span>{isText ? 'Text Message Received' : completed ? 'File Received' : 'Receiving File...'}</span>
+        </div>
+
+        {/* Close Button */}
+        <button
+          onClick={onClose}
+          className="absolute top-4 right-4 w-8 h-8 rounded-full flex items-center justify-center text-[#788395] hover:text-[#151B2D] hover:bg-[#F8F9FD] transition"
+        >
+          <X className="w-4 h-4" />
+        </button>
+
+        {/* Graphic */}
+        <div className="my-2">
+          <div className="w-20 h-20 mx-auto rounded-full bg-[#EEF1FF] flex items-center justify-center">
+            {isText ? (
+              <AlignLeft className="w-9 h-9 text-[#8755E8]" />
+            ) : completed ? (
+              <CheckCircle2 className="w-10 h-10 text-[#16A05A] animate-scaleIn" />
+            ) : (
+              <FileText className="w-9 h-9 text-[#5865E9] animate-bounce" />
+            )}
+          </div>
+        </div>
+
+        {/* Text Message Display (NO FILE CREATED) */}
+        {isText ? (
+          <div className="my-3">
+            <h3 className="font-bold text-[#151B2D] text-base mb-1">
+              Shared by {incoming.senderName || 'Paired Device'}
+            </h3>
+            <p className="text-[11px] text-[#788395] mb-3 font-medium">
+              {(incoming.textContent || '').length} characters
+            </p>
+
+            <div className="p-4 bg-[#F8F9FD] border border-[#E8EBF3] rounded-2xl text-left text-xs text-[#151B2D] font-mono whitespace-pre-wrap max-h-48 overflow-y-auto mb-4 select-text">
+              {incoming.textContent}
+            </div>
+
+            <div className="flex gap-2">
+              <button
+                onClick={handleCopyText}
+                className="flex-1 py-3 bg-[#5865E9] hover:bg-[#4c57d8] text-white font-semibold text-xs rounded-2xl transition flex items-center justify-center gap-2 shadow-titan-sm"
+              >
+                {copied ? <Check className="w-4 h-4 text-white" /> : <Copy className="w-4 h-4" />}
+                <span>{copied ? 'Copied to Clipboard!' : 'Copy Text'}</span>
+              </button>
+              <button
+                onClick={onClose}
+                className="py-3 px-4 bg-[#F8F9FD] hover:bg-[#EEF1FF] text-[#788395] hover:text-[#5865E9] font-semibold text-xs rounded-2xl transition border border-[#E8EBF3]"
+              >
+                Done
+              </button>
+            </div>
+          </div>
+        ) : (
+          /* File Transfer Display */
+          <div className="my-3">
+            <h3 className="font-bold text-[#151B2D] text-base mb-1 truncate px-4">{incoming.fileName}</h3>
+            <p className="text-xs text-[#788395] font-medium mb-4">
+              From {incoming.senderName || 'Paired Device'} • {formatBytes(incoming.fileSize)}
+            </p>
+
+            {/* Real-time Percentage & Bytes */}
+            {downloading && (
+              <div className="mb-4">
+                <div className="w-full bg-[#EEF1FF] h-2.5 rounded-full overflow-hidden mb-1.5">
+                  <div 
+                    className="bg-[#5865E9] h-full rounded-full transition-all duration-200" 
+                    style={{ width: `${progress}%` }} 
+                  />
+                </div>
+                <div className="flex items-center justify-between text-[11px] font-semibold text-[#151B2D] px-1">
+                  <span>{formatBytes(transferredBytes || (progress > 0 && incoming.fileSize ? Math.round((progress / 100) * incoming.fileSize) : 0))} / {formatBytes(incoming.fileSize)}</span>
+                  <span className="text-[#5865E9] font-bold">{progress}%</span>
+                </div>
+                {speed && !completed && (
+                  <div className="text-[11px] text-[#5865E9] font-semibold mt-1">
+                    Real Speed: {speed}
+                  </div>
+                )}
+              </div>
+            )}
+
+            {/* Saved location notice */}
+            {completed && (
+              <div className="p-3.5 bg-[#F8F9FD] rounded-2xl border border-[#E8EBF3] mb-5 text-left flex items-start gap-2.5">
+                <FolderCheck className="w-4 h-4 text-[#16A05A] shrink-0 mt-0.5" />
+                <div className="min-w-0">
+                  <div className="text-[11px] font-semibold text-[#151B2D]">Saved to Folder:</div>
+                  <div className="text-[10px] text-[#788395] truncate font-mono">{savePath}</div>
+                </div>
+              </div>
+            )}
+
+            {/* Action Button */}
+            <button
+              onClick={completed ? onClose : handleCancel}
+              className={`w-full py-3.5 font-semibold text-xs rounded-2xl transition shadow-titan-sm ${
+                completed 
+                  ? 'bg-[#5865E9] hover:bg-[#4c57d8] text-white' 
+                  : 'bg-[#F8F9FD] hover:bg-[#EEF1FF] text-[#788395] border border-[#E8EBF3]'
+              }`}
+            >
+              {completed ? 'Done' : 'Cancel Transfer'}
+            </button>
+          </div>
+        )}
+
+      </div>
+    </div>
+  );
+}

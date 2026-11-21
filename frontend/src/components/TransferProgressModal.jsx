@@ -136,13 +136,24 @@ export default function TransferProgressModal({ targetDevice, item, onClose }) {
       const blob = new Blob(['1'], { type: 'text/plain' });
       formData.append('file', blob, 'text.dat');
       setStatusMessage('Sending text note directly...');
-    } else if (item.type === 'folder' && item.files && item.files.length > 0) {
-      setStatusMessage('Packaging folder into zip archive...');
+    } else if ((item.type === 'folder' || item.type === 'files') && item.files && item.files.length > 0) {
+      setStatusMessage('Packaging ' + item.files.length + ' files into zip bundle...');
       try {
         const zip = new JSZip();
         for (let i = 0; i < item.files.length; i++) {
           const f = item.files[i];
-          zip.file(f.webkitRelativePath || f.name, f);
+          if (f instanceof File) {
+            zip.file(f.webkitRelativePath || f.name, f);
+          } else if (f && f.cachePath) {
+            try {
+              const fileSrc = Capacitor.convertFileSrc(f.cachePath);
+              const res = await fetch(fileSrc);
+              const blob = await res.blob();
+              zip.file(f.name || `file_${i}`, blob);
+            } catch (readErr) {
+              console.warn('Could not read cached file for zip:', readErr);
+            }
+          }
         }
         const zipBlob = await zip.generateAsync({ type: 'blob' }, (meta) => {
           const zPct = Math.round(meta.percent);
@@ -151,12 +162,16 @@ export default function TransferProgressModal({ targetDevice, item, onClose }) {
             detail: { id: currentTransferId, progress: zPct, speed: 'Zipping...' }
           }));
         });
-        const zipName = item.name.endsWith('.zip') ? item.name : `${item.name}.zip`;
+        const zipName = item.type === 'files' 
+          ? `Titan_Files_${item.files.length}_items.zip` 
+          : (item.name.endsWith('.zip') ? item.name : `${item.name}.zip`);
         formData.append('file', zipBlob, zipName);
         formData.append('originalName', zipName);
-        setStatusMessage('Sending folder to device...');
+        formData.append('isMultiFile', 'true');
+        formData.append('fileCount', String(item.files.length));
+        setStatusMessage('Sending ' + item.files.length + ' files to device...');
       } catch (err) {
-        setError('Failed to zip folder: ' + err.message);
+        setError('Failed to package files: ' + err.message);
         return;
       }
     } else if (item.file) {
