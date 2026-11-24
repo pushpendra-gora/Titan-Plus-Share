@@ -20,6 +20,22 @@ if not exist "%EXE_PATH%" (
     exit /b 1
 )
 
+:: Ensure Node.js is installed
+where node >nul 2>&1
+if %errorlevel% neq 0 (
+    echo [WARNING] Node.js is not yet installed on this PC.
+    echo           Please install Node.js (LTS) from https://nodejs.org
+    echo.
+)
+
+:: Auto-install server dependencies if missing
+if not exist "%APP_DIR%\server\node_modules\" (
+    echo [*] Installing server dependencies for this laptop...
+    cd /d "%APP_DIR%\server"
+    call npm install --omit=dev >nul 2>&1
+    cd /d "%APP_DIR%"
+)
+
 echo [1/5] Creating default received files storage folder...
 if not exist "%SAVE_DIR%" (
     mkdir "%SAVE_DIR%" 2>nul

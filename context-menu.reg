@@ -1,26 +1,30 @@
-Windows Registry Editor Version 5.00
+; Windows Registry Editor Version 5.00
+; NOTE: The recommended way to install the right-click context menu on ANY laptop is:
+; Double-click "Add-To-Windows-Context-Menu.bat" in the application folder.
+; That batch script automatically uses the current laptop path dynamically!
+;
+; If you manually import this .reg file, ensure the file paths below match your actual installation folder:
 
 [HKEY_CURRENT_USER\Software\Classes\*\shell\TitanPlusShare]
 @="Share with Titan Plus Share"
-"Icon"="\"C:\\Users\\pushp\\Documents\\Titan Plus Share\\assets\\app.ico\""
+"Icon"="\"%~dp0assets\\app.ico\""
 "Position"="Top"
 
 [HKEY_CURRENT_USER\Software\Classes\*\shell\TitanPlusShare\command]
-@="\"C:\\Users\\pushp\\Documents\\Titan Plus Share\\Titan-Plus-Share.exe\" \"%1\""
+@="\"%~dp0Titan-Plus-Share.exe\" \"%1\""
 
 [HKEY_CURRENT_USER\Software\Classes\Directory\shell\TitanPlusShare]
 @="Share with Titan Plus Share"
-"Icon"="\"C:\\Users\\pushp\\Documents\\Titan Plus Share\\assets\\app.ico\""
+"Icon"="\"%~dp0assets\\app.ico\""
 "Position"="Top"
 
 [HKEY_CURRENT_USER\Software\Classes\Directory\shell\TitanPlusShare\command]
-@="\"C:\\Users\\pushp\\Documents\\Titan Plus Share\\Titan-Plus-Share.exe\" \"%1\""
+@="\"%~dp0Titan-Plus-Share.exe\" \"%1\""
 
 [HKEY_CURRENT_USER\Software\Classes\AllFilesystemObjects\shell\TitanPlusShare]
 @="Share with Titan Plus Share"
-"Icon"="\"C:\\Users\\pushp\\Documents\\Titan Plus Share\\assets\\app.ico\""
+"Icon"="\"%~dp0assets\\app.ico\""
 "Position"="Top"
 
 [HKEY_CURRENT_USER\Software\Classes\AllFilesystemObjects\shell\TitanPlusShare\command]
-@="\"C:\\Users\\pushp\\Documents\\Titan Plus Share\\Titan-Plus-Share.exe\" \"%1\""
-
+@="\"%~dp0Titan-Plus-Share.exe\" \"%1\""

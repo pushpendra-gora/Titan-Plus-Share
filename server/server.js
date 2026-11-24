@@ -186,6 +186,22 @@ const upload = multer({ storage });
 const server = http.createServer(app);
 const wss = new WebSocketServer({ server, path: '/ws' });
 
+server.on('error', (err) => {
+  if (err.code === 'EADDRINUSE') {
+    console.log(`Port ${PORT} is already in use by an active Titan Plus Share server instance.`);
+    console.log(`Server is already active and running at http://localhost:${PORT}`);
+    process.exit(0);
+  } else {
+    console.error('Server error:', err);
+    process.exit(1);
+  }
+});
+
+wss.on('error', (err) => {
+  if (err.code === 'EADDRINUSE') return;
+  console.warn('WebSocket server notice:', err.message);
+});
+
 const wsClients = new Set();
 const onlineClients = new Map(); // ws -> client info
 

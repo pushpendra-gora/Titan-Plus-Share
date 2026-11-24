@@ -1,0 +1,26 @@
+{
+  "name": "titan-plus-share",
+  "version": "2.0.0",
+  "description": "Titan Plus Share - Fast, Simple, Anywhere cross-platform file sharing",
+  "main": "server/server.js",
+  "scripts": {
+    "setup": "npm --prefix server install && npm --prefix frontend install && npm --prefix frontend run build",
+    "install:server": "npm --prefix server install",
+    "install:frontend": "npm --prefix frontend install",
+    "build": "npm --prefix frontend run build",
+    "start": "node server/server.js",
+    "dev:server": "node server/server.js",
+    "dev:frontend": "npm --prefix frontend run dev",
+    "postinstall": "npm --prefix server install --omit=dev"
+  },
+  "keywords": [
+    "file-sharing",
+    "lan-transfer",
+    "cross-platform",
+    "peer-to-peer",
+    "remote-download",
+    "titan-plus-share"
+  ],
+  "author": "Pushpendra Gora",
+  "license": "MIT"
+}
